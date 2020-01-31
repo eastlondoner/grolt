@@ -79,48 +79,7 @@ def watch_log(ctx, param, value):
     watch("urllib3", DEBUG if value >= 1 else INFO)
 
 
-@click.group()
-def grolt():
-    pass
-
-
-@grolt.command(help="""\
-Run a Bolt client.
-""")
-@click.option("-a", "--auth", type=AuthParamType(), envvar="NEO4J_AUTH")
-@click.option("-b", "--bolt-version", default=0, type=int)
-@click.option("-s", "--server-addr", type=AddressListParamType(), envvar="BOLT_SERVER_ADDR")
-@click.option("-t", "--transaction", is_flag=True)
-@click.option("-v", "--verbose", count=True, callback=watch_log, expose_value=False, is_eager=True)
-@click.argument("cypher", nargs=-1)
-def client(cypher, server_addr, auth, transaction, bolt_version):
-    if auth is None:
-        auth = Auth(click.prompt("User", default="neo4j"),
-                    click.prompt("Password", hide_input=True))
-    if bolt_version:
-        bolt_versions = [bolt_version]
-    else:
-        bolt_versions = None
-    try:
-        with Connection.open(*server_addr or (), auth=auth, bolt_versions=bolt_versions) as cx:
-            records = []
-            if transaction:
-                cx.begin()
-            for statement in cypher:
-                cx.run(statement, {})
-                cx.pull(-1, -1, records)
-            if transaction:
-                cx.commit()
-            cx.send_all()
-            cx.fetch_all()
-            for record in records:
-                click.echo("\t".join(map(str, record)))
-    except Exception as e:
-        click.echo(" ".join(map(str, e.args)), err=True)
-        sys.exit(1)
-
-
-@grolt.command(context_settings={"ignore_unknown_options": True}, help="""\
+@click.command(context_settings={"ignore_unknown_options": True}, help="""\
 Run a Neo4j cluster or standalone server in one or more local Docker 
 containers.
 
@@ -199,9 +158,9 @@ passed. These are:
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
 @click.argument("command", nargs=-1, type=click.UNPROCESSED)
-def server(command, name, image, auth, n_cores, n_replicas,
-           bolt_port, http_port, debug_port, debug_suspend, import_dir,
-           logs_dir, plugins_dir, certificates_dir, config):
+def grolt(command, name, image, auth, n_cores, n_replicas,
+          bolt_port, http_port, debug_port, debug_suspend, import_dir,
+          logs_dir, plugins_dir, certificates_dir, config):
     try:
         dir_spec = Neo4jDirectorySpec(
             import_dir=import_dir,
@@ -220,7 +179,6 @@ def server(command, name, image, auth, n_cores, n_replicas,
     except KeyboardInterrupt:
         sys.exit(130)
     except Exception as e:
-        raise
         click.echo(" ".join(map(str, e.args)), err=True)
         sys.exit(1)
 
