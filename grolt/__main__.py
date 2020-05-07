@@ -179,6 +179,8 @@ passed. These are:
               help="A Docker network name to which all servers will be "
                    "attached. If omitted, an auto-generated name will be "
                    "used.")
+@click.option("-N", "--neo4j-source-dir", type=Path(exists=True, dir_okay=True),
+              help="Path to neo4j source repo. Mounts and uses the packaged neo4j jars and binaries from there.")
 @click.option("-P", "--plugins-dir", type=Path(exists=True, dir_okay=True,
                                                writable=True),
               help="Share a local directory for use by server plugins.")
@@ -210,6 +212,7 @@ def grolt(
         logs_dir,
         plugins_dir,
         certificates_dir,
+        neo4j_source_dir,
         dir,
         config,
 ):
@@ -220,6 +223,7 @@ def grolt(
             plugins_dir=plugins_dir,
             certificates_dir=certificates_dir,
             shared_dirs=dir,
+            neo4j_source_dir=neo4j_source_dir,
         )
         config_dict = dict(item.partition("=")[::2] for item in config)
         env_dict = dict(item.partition("=")[::2] for item in env)

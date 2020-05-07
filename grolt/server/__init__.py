@@ -24,16 +24,18 @@ from itertools import chain
 from logging import getLogger
 from math import ceil
 from os import makedirs
+from os.path import isdir
 from os.path import join as path_join
 from random import choice
 from threading import Thread
 from time import monotonic, sleep
+from xml.etree import ElementTree
 
 from grolt.addressing import Address
 from grolt.auth import Auth, make_auth
 from grolt.client import AddressList, Connection
-from grolt.server.images import resolve_image
 from grolt.server.console import Neo4jConsole, Neo4jClusterConsole
+from grolt.server.images import resolve_image
 
 log = getLogger("grolt")
 
@@ -48,12 +50,14 @@ class Neo4jDirectorySpec:
                  logs_dir=None,
                  plugins_dir=None,
                  shared_dirs=None,
+                 neo4j_source_dir=None,
                  ):
         self.certificates_dir = certificates_dir
         self.import_dir = import_dir
         self.logs_dir = logs_dir
         self.plugins_dir = plugins_dir
         self.shared_dirs = shared_dirs
+        self.neo4j_source_dir = neo4j_source_dir
 
     def volumes(self, name):
         volumes = {}
@@ -83,6 +87,24 @@ class Neo4jDirectorySpec:
                     "bind": shared_dir.destination,
                     "mode": "rw",
                 }
+        if self.neo4j_source_dir:
+            pom = ElementTree.parse(self.neo4j_source_dir + "/pom.xml").getroot()
+            xml_tag_prefix = pom.tag.split("project")[0]
+            neo4j_version = pom.find(xml_tag_prefix+"version").text
+            lib = self.neo4j_source_dir + f"/private/packaging/standalone/target/neo4j-enterprise-{neo4j_version}-unix/neo4j-enterprise-{neo4j_version}/lib"
+            bin = self.neo4j_source_dir + f"/private/packaging/standalone/target/neo4j-enterprise-{neo4j_version}-unix/neo4j-enterprise-{neo4j_version}/bin"
+            if not isdir(lib):
+                raise Exception(f"Could not find packaged neo4j source at {lib}\nPerhaps you need to run mvn package?")
+
+            volumes[lib] = {
+                "bind": "/var/lib/neo4j/lib/",
+                "mode": "ro",
+            }
+            volumes[bin] = {
+                "bind": "/var/lib/neo4j/bin/",
+                "mode": "ro",
+            }
+
         return volumes
 
 
