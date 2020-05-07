@@ -46,12 +46,14 @@ class Neo4jDirectorySpec:
                  certificates_dir=None,
                  import_dir=None,
                  logs_dir=None,
-                 plugins_dir=None
+                 plugins_dir=None,
+                 shared_dirs=None,
                  ):
         self.certificates_dir = certificates_dir
         self.import_dir = import_dir
         self.logs_dir = logs_dir
         self.plugins_dir = plugins_dir
+        self.shared_dirs = shared_dirs
 
     def volumes(self, name):
         volumes = {}
@@ -75,6 +77,12 @@ class Neo4jDirectorySpec:
                 "bind": "/plugins",
                 "mode": "ro",
             }
+        if self.shared_dirs:
+            for shared_dir in self.shared_dirs:
+                volumes[shared_dir.source] = {
+                    "bind": shared_dir.destination,
+                    "mode": "rw",
+                }
         return volumes
 
 
@@ -94,15 +102,27 @@ class Neo4jMachineSpec:
     raft_port = 7000
     debug_port = 5100
 
-    def __init__(self, name, service_name, bolt_port, http_port,
-                 debug_opts, dir_spec, config):
+    def __init__(
+            self,
+            name,
+            service_name,
+            bolt_port,
+            http_port,
+            https_port,
+            debug_opts,
+            dir_spec,
+            config,
+            env
+    ):
         self.name = name
         self.service_name = service_name
         self.bolt_port = bolt_port
         self.http_port = http_port
+        self.https_port = https_port
         self.dir_spec = dir_spec
         self.debug_opts = debug_opts
-        self.config = dict(self.config or {})
+        self.env = dict(env or {})
+        self.config = dict()
         if debug_opts.port is not None:
             self._add_debug_opts(debug_opts)
         self.config["dbms.connector.bolt.advertised_address"] = \
@@ -140,28 +160,30 @@ class Neo4jMachineSpec:
     def _add_debug_opts(self, debug_opts):
         if debug_opts.port is not None:
             suspend = "y" if debug_opts.suspend else "n"
-            self.config["dbms.jvm.additional"] = ("-agentlib:jdwp=transport=dt_socket,server=y,"
-                                                  "suspend={},address=0.0.0.0:{}".format(suspend, self.debug_port))
+            self.env["JAVA_TOOL_OPTIONS"] = (
+                "-agentlib:jdwp=transport=dt_socket,server=y,"
+                "suspend={},address=*:{}".format(suspend, self.debug_port)
+            )
 
 
 class Neo4jCoreMachineSpec(Neo4jMachineSpec):
 
-    def __init__(self, name, service_name, bolt_port, http_port, debug_opts,
-                 dir_spec, config):
+    def __init__(self, name, service_name, bolt_port, http_port, https_port, debug_opts,
+                 dir_spec, config, env):
         config = config or {}
         config["dbms.mode"] = "CORE"
-        super().__init__(name, service_name, bolt_port, http_port, debug_opts,
-                         dir_spec, config)
+        super().__init__(name, service_name, bolt_port, http_port, https_port, debug_opts,
+                         dir_spec, config, env)
 
 
 class Neo4jReplicaMachineSpec(Neo4jMachineSpec):
 
-    def __init__(self, name, service_name, bolt_port, http_port, debug_opts,
-                 dir_spec, config):
+    def __init__(self, name, service_name, bolt_port, http_port, https_port, debug_opts,
+                 dir_spec, config, env):
         config = config or {}
         config["dbms.mode"] = "READ_REPLICA"
-        super().__init__(name, service_name, bolt_port, http_port, debug_opts,
-                         dir_spec, config)
+        super().__init__(name, service_name, bolt_port, http_port, https_port, debug_opts,
+                         dir_spec, config, env)
 
 
 class Neo4jMachine:
@@ -190,10 +212,13 @@ class Neo4jMachine:
         for key, value in self.spec.config.items():
             fixed_key = "NEO4J_" + key.replace("_", "__").replace(".", "_")
             environment[fixed_key] = value
+        for key, value in self.spec.env.items():
+            environment[key] = value
         ports = {
-            "7474/tcp": self.spec.http_port,
-            "7687/tcp": self.spec.bolt_port,
-        }
+                    "7474/tcp": self.spec.http_port,
+                    "7473/tcp": self.spec.https_port,
+                    "7687/tcp": self.spec.bolt_port,
+                }
         if self.spec.debug_opts.port is not None:
             ports["5100/tcp"] = self.spec.debug_opts.port
         if self.spec.dir_spec:
@@ -340,6 +365,7 @@ class Neo4jService:
 
     default_bolt_port = 7687
     default_http_port = 7474
+    default_https_port = 7473
     default_debug_port = 5005
 
     snapshot_host = "live.neo4j-build.io"
@@ -350,9 +376,9 @@ class Neo4jService:
 
     def __new__(cls, name=None, image=None, auth=None,
                 n_cores=None, n_replicas=None,
-                bolt_port=None, http_port=None,
+                bolt_port=None, http_port=None, https_port=None,
                 debug_port=None, debug_suspend=None,
-                dir_spec=None, config=None):
+                dir_spec=None, config=None, env=None):
         if n_cores:
             return object.__new__(Neo4jClusterService)
         else:
@@ -365,8 +391,9 @@ class Neo4jService:
     # noinspection PyUnusedLocal
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
-                 bolt_port=None, http_port=None, debug_port=None,
-                 debug_suspend=None, dir_spec=None, config=None):
+                 bolt_port=None, http_port=None, https_port=None,
+                 debug_port=None, debug_suspend=None, dir_spec=None,
+                 config=None, env=None):
         from docker import DockerClient
         self.name = name or self._random_name()
         self.docker = DockerClient.from_env(version="auto")
@@ -528,20 +555,22 @@ class Neo4jStandaloneService(Neo4jService):
 
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
-                 bolt_port=None, http_port=None, debug_port=None,
-                 debug_suspend=None, dir_spec=None, config=None):
+                 bolt_port=None, http_port=None, https_port=None, debug_port=None,
+                 debug_suspend=None, dir_spec=None, config=None, env=None):
         super().__init__(name, image, auth,
                          n_cores, n_replicas,
-                         bolt_port, http_port,
-                         dir_spec, config)
+                         bolt_port, http_port, https_port,
+                         dir_spec, config, env)
         spec = Neo4jMachineSpec(
             name="a",
             service_name=self.name,
             bolt_port=bolt_port or self.default_bolt_port,
             http_port=http_port or self.default_http_port,
+            https_port=https_port or self.default_https_port,
             debug_opts=debug_opts_type(debug_suspend, debug_port),
             dir_spec=dir_spec,
             config=config,
+            env=env,
         )
         self.machines[spec] = Neo4jMachine(
             spec,
@@ -574,12 +603,12 @@ class Neo4jClusterService(Neo4jService):
 
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
-                 bolt_port=None, http_port=None, debug_port=None,
-                 debug_suspend=None, dir_spec=None, config=None):
+                 bolt_port=None, http_port=None, https_port=None, debug_port=None,
+                 debug_suspend=None, dir_spec=None, config=None, env=None):
         super().__init__(name, image, auth,
                          n_cores, n_replicas,
-                         bolt_port, http_port, debug_port,
-                         debug_suspend, dir_spec, config)
+                         bolt_port, http_port, https_port, debug_port,
+                         debug_suspend, dir_spec, config, env)
         n_cores = n_cores or self.min_cores
         n_replicas = n_replicas or self.min_replicas
         if not self.min_cores <= n_cores <= self.max_cores:
@@ -594,6 +623,8 @@ class Neo4jClusterService(Neo4jService):
             bolt_port or self.default_bolt_port, self.max_cores)
         core_http_port_range = self._port_range(
             http_port or self.default_http_port, self.max_cores)
+        core_https_port_range = self._port_range(
+            https_port or self.default_https_port, self.max_cores)
         core_debug_port_range = self._port_range(debug_port, self.max_cores)
         self.free_core_machine_specs = [
             Neo4jCoreMachineSpec(
@@ -601,6 +632,7 @@ class Neo4jClusterService(Neo4jService):
                 service_name=self.name,
                 bolt_port=core_bolt_port_range[i],
                 http_port=core_http_port_range[i],
+                https_port=core_https_port_range[i],
                 # Only suspend first core in cluster, otherwise cluster won't form until debuggers
                 # connect to all of them.
                 debug_opts=debug_opts_type(debug_suspend if i == 0 else False, core_debug_port_range[i]),
@@ -611,6 +643,7 @@ class Neo4jClusterService(Neo4jService):
                     "causal_clustering.minimum_core_cluster_size_at_runtime":
                         self.min_cores,
                 }),
+                env=env,
             )
             for i in range(self.max_cores)
         ]
@@ -618,6 +651,8 @@ class Neo4jClusterService(Neo4jService):
             ceil(core_bolt_port_range.stop / 10) * 10 + 1, self.max_replicas)
         replica_http_port_range = self._port_range(
             ceil(core_http_port_range.stop / 10) * 10 + 1, self.max_replicas)
+        replica_https_port_range = self._port_range(
+            ceil(core_https_port_range.stop / 10) * 10 + 1, self.max_replicas)
         if debug_port:
             replica_debug_port_range = self._port_range(
                 ceil(core_debug_port_range.stop / 10) * 10 + 1, self.max_replicas)
@@ -629,11 +664,13 @@ class Neo4jClusterService(Neo4jService):
                 service_name=self.name,
                 bolt_port=replica_bolt_port_range[i],
                 http_port=replica_http_port_range[i],
+                https_port=replica_https_port_range[i],
                 # Only suspend first core in cluster, otherwise cluster won't form until debuggers
                 # connect to all of them.
                 debug_opts=debug_opts_type(debug_suspend if i == 0 else False, replica_debug_port_range[i]),
                 dir_spec=dir_spec,
                 config=config,
+                env=env,
             )
             for i in range(self.max_replicas)
         ]

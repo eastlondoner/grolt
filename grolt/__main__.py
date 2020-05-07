@@ -66,6 +66,33 @@ class AddressListParamType(click.ParamType):
         return 'HOST:PORT [HOST:PORT...]'
 
 
+class VolumeMount():
+    def __init__(self, source, destination):
+        self.source = source
+        self.destination = destination
+
+
+class VolumeMountParamType(click.ParamType):
+
+    name = "vol"
+
+    source_spec = Path(exists=True, dir_okay=True, readable=True, writable=True, allow_dash=False)
+    destination_spec = Path(exists=False, allow_dash=False)
+
+    def __init__(self):
+        pass
+
+    def convert(self, value, param, ctx):
+        [source, destination] = value.split(":")
+        return VolumeMount(
+            self.source_spec.convert(source.strip(), None, None),
+            self.destination_spec.convert(destination.strip(), None, None)
+        )
+
+    def __repr__(self):
+        return 'SOURCE:DESTINATION'
+
+
 class ConfigParamType(click.ParamType):
 
     name = "NAME=VALUE"
@@ -114,16 +141,27 @@ passed. These are:
 @click.option("-C", "--config", type=ConfigParamType(), multiple=True,
               help="Pass a configuration value into neo4j.conf. This can be "
                    "used multiple times.")
+@click.option("-d", "--dir", multiple=True, type=VolumeMountParamType(),
+              help="Share a local directory into the neo4j docker container(s) "
+                   "(mount a volume in docker parlance). "
+                   "N.b. the directory is shared to ALL docker containers."
 @click.option("-D", "--debug-port", type=int,
               help="The port number (standalone) or base port number (cluster) "
                    "for java remote debugging.")
+@click.option("-e", "--env", type=ConfigParamType(), multiple=True,
+              help="Pass an env value into neo4j docker containers. This can be "
+                   "used multiple times.")
 @click.option("-E", "--debug-suspend", is_flag=True,
               help="The first Neo4j server process (machine a) should hang "
                    "until a connection is made by a remote java debugger. This "
                    "option is only valid if a debug port is specified with -D.")
+# -h / --help is automatically provided by click
 @click.option("-H", "--http-port", type=int,
               help="A port number (standalone) or base port number (cluster) "
                    "for HTTP traffic.")
+@click.option("--https-port", type=int,
+              help="A port number (standalone) or base port number (cluster) "
+                   "for HTTPS traffic.")
 @click.option("-i", "--image",
               help="The Docker image tag to use for building containers. The "
                    "repository name can be included before the colon, but will "
@@ -158,19 +196,51 @@ passed. These are:
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
 @click.argument("command", nargs=-1, type=click.UNPROCESSED)
-def grolt(command, name, image, auth, n_cores, n_replicas,
-          bolt_port, http_port, debug_port, debug_suspend, import_dir,
-          logs_dir, plugins_dir, certificates_dir, config):
+def grolt(
+        command,
+        name,
+        image,
+        auth,
+        n_cores,
+        n_replicas,
+        bolt_port,
+        http_port,
+        https_port,
+        debug_port,
+        env,
+        debug_suspend,
+        import_dir,
+        logs_dir,
+        plugins_dir,
+        certificates_dir,
+        dir,
+        config,
+):
     try:
         dir_spec = Neo4jDirectorySpec(
             import_dir=import_dir,
             logs_dir=logs_dir,
             plugins_dir=plugins_dir,
             certificates_dir=certificates_dir,
+            shared_dirs=dir,
         )
         config_dict = dict(item.partition("=")[::2] for item in config)
-        with Neo4jService(name, image, auth, n_cores, n_replicas,
-                          bolt_port, http_port, debug_port, debug_suspend, dir_spec, config_dict) as neo4j:
+        env_dict = dict(item.partition("=")[::2] for item in env)
+        with Neo4jService(
+                name,
+                image,
+                auth,
+                n_cores,
+                n_replicas,
+                bolt_port,
+                http_port,
+                https_port,
+                debug_port,
+                debug_suspend,
+                dir_spec,
+                config_dict,
+                env_dict
+        ) as neo4j:
             if command:
                 run(" ".join(map(shlex_quote, command)), shell=True,
                     env=neo4j.env())
