@@ -141,7 +141,7 @@ passed. These are:
 @click.option("-d", "--dir", multiple=True, type=VolumeMountParamType(),
               help="Share a local directory into the neo4j docker container(s) "
                    "(mount a volume in docker parlance). "
-                   "N.b. the directory is shared to ALL docker containers."
+                   "N.b. the directory is shared to ALL docker containers.")
 @click.option("-D", "--debug-port", type=int,
               help="The port number (standalone) or base port number (cluster) "
                    "for java remote debugging.")
