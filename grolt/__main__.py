@@ -141,7 +141,7 @@ passed. These are:
 @click.option("-d", "--dir", multiple=True, type=VolumeMountParamType(),
               help="Share a local directory into the neo4j docker container(s) "
                    "(mount a volume in docker parlance). "
-                   "N.b. the directory is shared to ALL docker containers."
+                   "N.b. the directory is shared to ALL docker containers.")
 @click.option("-D", "--debug-port", type=int,
               help="The port number (standalone) or base port number (cluster) "
                    "for java remote debugging.")
@@ -179,6 +179,8 @@ passed. These are:
               help="A Docker network name to which all servers will be "
                    "attached. If omitted, an auto-generated name will be "
                    "used.")
+@click.option("-N", "--neo4j-source-dir", type=Path(exists=True, dir_okay=True),
+              help="Path to neo4j source repo. Mounts and uses the packaged neo4j jars and binaries from there.")
 @click.option("-P", "--plugins-dir", type=Path(exists=True, dir_okay=True,
                                                writable=True),
               help="Share a local directory for use by server plugins.")
@@ -210,6 +212,7 @@ def grolt(
         logs_dir,
         plugins_dir,
         certificates_dir,
+        neo4j_source_dir,
         dir,
         config,
 ):
@@ -220,6 +223,7 @@ def grolt(
             plugins_dir=plugins_dir,
             certificates_dir=certificates_dir,
             shared_dirs=dir,
+            neo4j_source_dir=neo4j_source_dir,
         )
         config_dict = dict(item.partition("=")[::2] for item in config)
         env_dict = dict(item.partition("=")[::2] for item in env)
