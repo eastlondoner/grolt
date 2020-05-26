@@ -199,18 +199,22 @@ class Neo4jConsole:
         - Whether or not the server is a router
         - Roles for the current tx context: (r)ead or (w)rite
         - Docker container in which the server is running
+        - Debug port
 
         """
         self.service.update_routing_info(self.tx_context, force=refresh)
         click.echo("NAME        BOLT PORT   HTTP PORT   "
-                   "MODE           ROUTER   ROLES   CONTAINER")
-        for spec, machine in self.service.machines.items():
+                   "MODE           ROUTER   ROLES   CONTAINER   "
+                   "DEBUG PORT")
+        for spec, machine in self.service.machines.items() :
+            if spec is None or machine is None:
+                continue
             roles = ""
             if machine in self.service.readers(self.tx_context):
                 roles += "r"
             if machine in self.service.writers(self.tx_context):
                 roles += "w"
-            click.echo("{:<12}{:<12}{:<12}{:<15}{:<9}{:<8}{}".format(
+            click.echo("{:<12}{:<12}{:<12}{:<15}{:<9}{:<8}{:<12}{}".format(
                 spec.fq_name,
                 spec.bolt_port,
                 spec.http_port,
@@ -218,6 +222,7 @@ class Neo4jConsole:
                 "✓" if machine in self.service.routers() else "",
                 roles,
                 machine.container.short_id,
+                spec.debug_opts.port,
             ))
 
     @click.command()

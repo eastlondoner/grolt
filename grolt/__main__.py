@@ -20,8 +20,6 @@
 
 
 import sys
-
-from asyncio import get_event_loop
 from logging import INFO, DEBUG
 from shlex import quote as shlex_quote
 from subprocess import run
@@ -30,8 +28,7 @@ import click
 from click import Path
 
 from grolt.addressing import Address, AddressList
-from grolt.auth import AuthParamType, Auth
-from grolt.client import Connection
+from grolt.auth import AuthParamType
 from grolt.server import Neo4jService, Neo4jDirectorySpec
 from grolt.watcher import watch
 
@@ -179,7 +176,10 @@ def grolt(command, name, image, auth, n_cores, n_replicas,
     except KeyboardInterrupt:
         sys.exit(130)
     except Exception as e:
-        click.echo(" ".join(map(str, e.args)), err=True)
+        message = " ".join(map(str, e.args))
+        if hasattr(e, 'explanation'):
+            message += "\n" + e.explanation
+        click.echo(message, err=True)
         sys.exit(1)
 
 
