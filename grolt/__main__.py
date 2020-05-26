@@ -138,7 +138,7 @@ passed. These are:
 @click.option("-C", "--config", type=ConfigParamType(), multiple=True,
               help="Pass a configuration value into neo4j.conf. This can be "
                    "used multiple times.")
-@click.option("-d", "--dir", multiple=True, type=VolumeMountParamType(),
+@click.option("-d", "--directory", multiple=True, type=VolumeMountParamType(),
               help="Share a local directory into the neo4j docker container(s) "
                    "(mount a volume in docker parlance). "
                    "N.b. the directory is shared to ALL docker containers.")
@@ -213,7 +213,7 @@ def grolt(
         plugins_dir,
         certificates_dir,
         neo4j_source_dir,
-        dir,
+        directory,
         config,
 ):
     try:
@@ -222,7 +222,7 @@ def grolt(
             logs_dir=logs_dir,
             plugins_dir=plugins_dir,
             certificates_dir=certificates_dir,
-            shared_dirs=dir,
+            shared_dirs=directory,
             neo4j_source_dir=neo4j_source_dir,
         )
         config_dict = dict(item.partition("=")[::2] for item in config)
