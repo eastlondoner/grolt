@@ -25,6 +25,8 @@ It is used internally by Neo4j Engineering, and maintained by the team.
 You can, although we're not able to provide much external support or documentation right now.
 Plus the surface is still undergoing stabilisation, so be prepared for things to break.
 
+Grolt requires python 3. Depending on your local configuration You may need to use `python3` or `alias python=python3` before running the installation command.
+
 To install Grolt in developer mode, simply run:
 ```
 python setup.py develop
