@@ -123,6 +123,7 @@ class Neo4jMachineSpec:
     transaction_port = 6000
     raft_port = 7000
     debug_port = 5100
+    bolt_internal_port = 7688
 
     def __init__(
             self,
@@ -149,6 +150,9 @@ class Neo4jMachineSpec:
             self._add_debug_opts(debug_opts)
         self.config["dbms.connector.bolt.advertised_address"] = \
             "localhost:{}".format(self.bolt_port)
+        self.config["dbms.routing.enabled"] = "true"    
+        self.config["dbms.routing.advertised_address"] = \
+            self.bolt_internal_address    
         if config:
             self.config.update(**config)
 
@@ -178,6 +182,10 @@ class Neo4jMachineSpec:
     @property
     def bolt_address(self):
         return Address(("localhost", self.bolt_port))
+
+    @property
+    def bolt_internal_address(self):
+        return "{}:{}".format(self.fq_name, self.bolt_internal_port)
 
     def _add_debug_opts(self, debug_opts):
         if debug_opts.port is not None:
