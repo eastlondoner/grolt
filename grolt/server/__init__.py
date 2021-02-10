@@ -148,6 +148,8 @@ class Neo4jMachineSpec:
             self._add_debug_opts(debug_opts)
         self.config["dbms.connector.bolt.advertised_address"] = \
             "localhost:{}".format(self.bolt_port)
+        self.config["dbms.connector.http.advertised_address"] = \
+            "localhost:{}".format(self.http_port)
         self.config["dbms.routing.advertised_address"] = \
             self.bolt_internal_address    
         if config:
