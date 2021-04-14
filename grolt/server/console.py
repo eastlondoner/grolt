@@ -343,3 +343,15 @@ class Neo4jClusterConsole(Neo4jConsole):
         """
         if not self.service.remove(machine):
             raise RuntimeError("Machine {!r} not found".format(machine))
+
+    @click.command()
+    @click.argument("machine")
+    @click.pass_obj
+    def reboot(self, machine):
+        """ Reboot a server by name or role.
+
+        Servers can be identified either by their name (e.g. 'a', 'a.fbe340d')
+        or by the role they fulfil (i.e. 'r' or 'w').
+        """
+        if not self.service.reboot(machine):
+            raise RuntimeError("Machine {!r} not found".format(machine))

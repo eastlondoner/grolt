@@ -299,6 +299,21 @@ class Neo4jMachine:
         log.debug("Machine %r has internal IP address "
                   "«%s»", self.spec.fq_name, self.ip_address)
 
+    def restart(self):
+        from docker.errors import APIError
+        log.info("Restarting machine %r at "
+                 "«%s»", self.spec.fq_name, self.addresses)
+        try:
+            self.container.restart()
+            self.container.reload()
+            self.ip_address = (self.container.attrs["NetworkSettings"]
+                               ["Networks"][self.spec.service_name]["IPAddress"])
+        except APIError as e:
+            log.info(e)
+
+        log.debug("Machine %r has internal IP address "
+                  "«%s»", self.spec.fq_name, self.ip_address)
+
     def ping(self, timeout):
         try:
             with Connection.open(*self.addresses, auth=self.auth,
@@ -784,5 +799,14 @@ class Neo4jClusterService(Neo4jService):
         for spec, machine in list(self.machines.items()):
             if name in (spec.name, spec.fq_name):
                 self._remove_machine(spec)
+                found += 1
+        return found
+
+    def reboot(self, name):
+        found = 0
+        for spec, machine in list(self.machines.items()):
+            if name in (spec.name, spec.fq_name):
+                machine.restart()
+                machine.await_started(300)
                 found += 1
         return found
