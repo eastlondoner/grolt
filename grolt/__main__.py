@@ -180,7 +180,8 @@ passed. These are:
                    "attached. If omitted, an auto-generated name will be "
                    "used.")
 @click.option("-N", "--neo4j-source-dir", type=Path(exists=True, dir_okay=True),
-              help="Path to neo4j source repo. Mounts and uses the packaged neo4j jars and binaries from there.")
+              help="Path to neo4j source repo. Mounts and uses the "
+                   "packaged neo4j jars and binaries from there.")
 @click.option("-P", "--plugins-dir", type=Path(exists=True, dir_okay=True,
                                                writable=True),
               help="Share a local directory for use by server plugins.")
@@ -188,6 +189,8 @@ passed. These are:
               help="The number of read replicas to include within the "
                    "cluster. This option will only take effect if -c is also "
                    "used.")
+@click.option("-R", "--server-side-routing", is_flag=True,
+              help="Enable server-side routing.")
 @click.option("-S", "--certificates-dir", type=Path(exists=True, dir_okay=True,
                                                     writable=True),
               help="Share a local directory for use by server certificates.")
@@ -215,6 +218,7 @@ def grolt(
         neo4j_source_dir,
         directory,
         config,
+        server_side_routing,
 ):
     try:
         dir_spec = Neo4jDirectorySpec(
@@ -226,6 +230,8 @@ def grolt(
             neo4j_source_dir=neo4j_source_dir,
         )
         config_dict = dict(item.partition("=")[::2] for item in config)
+        if server_side_routing:
+            config_dict["dbms.routing.enabled"] = "true"
         env_dict = dict(item.partition("=")[::2] for item in env)
         with Neo4jService(
                 name,

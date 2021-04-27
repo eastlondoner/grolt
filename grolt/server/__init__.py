@@ -114,7 +114,6 @@ class Neo4jMachineSpec:
     config = {
         "dbms.backup.enabled": "false",
         "dbms.transaction.bookmark_ready_timeout": "5s",
-        "dbms.routing.enabled": "true",
     }
 
     discovery_port = 5000
