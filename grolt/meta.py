@@ -20,7 +20,7 @@
 
 
 package = "grolt"
-version = "0.0.dev0"
+version = "0.8.dev0"
 
 
 def get_user_agent():

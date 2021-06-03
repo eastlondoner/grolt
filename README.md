@@ -6,24 +6,16 @@ I am Grolt.
 
 There's no place like Grolt.
 
-We're all pretty Grolt. Some of us are just better at hiding it, that's all.
-
-Grolt helps those who help themselves.
-
-All you need is Grolt (Grolt is all you need).
-
 
 ## Erm, what?
 
 Yeah, sorry about that.
 Grolt is a Docker-based development and testing framework for Neo4j.
-It is used internally by Neo4j Engineering, and maintained by the team.
 
 
 ## Can I use it and, if so, how do I use it?
 
-You can, although we're not able to provide much external support or documentation right now.
-Plus the surface is still undergoing stabilisation, so be prepared for things to break.
+You can, but the surface is still undergoing stabilisation, so be prepared for things to break.
 
 Grolt requires python 3. Depending on your local configuration You may need to use `python3` or `alias python=python3` before running the installation command.
 
