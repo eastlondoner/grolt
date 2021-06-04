@@ -18,13 +18,11 @@
 
 from setuptools import setup, find_packages
 
-from grolt.meta import package, version
-
 
 packages = find_packages(exclude=("tests", "tests.*"))
 package_metadata = {
-    "name": package,
-    "version": version,
+    "name": "grolt",
+    "version": "1.0.1",
     "description": "Docker-based development and testing framework for Neo4j",
     "long_description": "Please see https://github.com/technige/grolt "
                         "for details.",
