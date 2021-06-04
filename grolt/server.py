@@ -25,14 +25,16 @@ from os.path import isdir
 from os.path import join as path_join
 from random import choice
 from threading import Thread
-from time import monotonic, sleep
+from time import monotonic, sleep, perf_counter
 from xml.etree import ElementTree
 
-from grolt.addressing import Address
+from py2neo import ConnectionProfile, ConnectionUnavailable
+from py2neo.client import Connection
+
+from grolt.addressing import Address, AddressList
 from grolt.auth import Auth, make_auth
-from grolt.client import AddressList, Connection
-from grolt.server.console import Neo4jConsole, Neo4jClusterConsole
-from grolt.server.images import resolve_image
+from grolt.console import Neo4jConsole, Neo4jClusterConsole
+from grolt.images import resolve_image
 
 log = getLogger("grolt")
 
@@ -229,6 +231,7 @@ class Neo4jMachine:
         self.address = Address(("localhost", self.spec.bolt_port))
         self.addresses = AddressList([("localhost", self.spec.bolt_port)])
         self.auth = auth
+        self.profile = ConnectionProfile(port=self.spec.bolt_port, auth=self.auth)
         self.docker = DockerClient.from_env(version="auto")
         environment = {}
         if self.auth:
@@ -310,13 +313,36 @@ class Neo4jMachine:
         log.debug("Machine %r has internal IP address "
                   "«%s»", self.spec.fq_name, self.ip_address)
 
+    def _poll_connection(self, timeout=0):
+        """ Repeatedly attempt to open a connection to a Bolt server.
+        """
+        t0 = perf_counter()
+        log.debug("Trying to open connection to %s", self.profile)
+        errors = set()
+        again = True
+        wait = 0.1
+        while again:
+            try:
+                cx = Connection.open(self.profile)
+            except ConnectionUnavailable as e:
+                errors.add(" ".join(map(str, e.args)))
+            else:
+                if cx:
+                    return cx
+            again = perf_counter() - t0 < (timeout or 0)
+            if again:
+                sleep(wait)
+                wait *= 2
+        log.error("Could not open connection to %s (%r)",
+                  self.profile, errors)
+        raise ConnectionUnavailable("Could not open connection")
+
     def ping(self, timeout):
         try:
-            with Connection.open(*self.addresses, auth=self.auth,
-                                 timeout=timeout):
-                log.info("Machine {!r} available".format(self.spec.fq_name))
-
-        except OSError:
+            cx = self._poll_connection(timeout=timeout)
+            cx.close()
+            log.info("Machine {!r} available".format(self.spec.fq_name))
+        except ConnectionUnavailable:
             log.info("Machine {!r} unavailable".format(self.spec.fq_name))
 
     def await_started(self, timeout):
@@ -362,22 +388,10 @@ class Neo4jRoutingTable:
         self.last_updated = 0
         self.ttl = 0
 
-    def update(self, server_lists, ttl):
-        new_routers = AddressList()
-        new_readers = AddressList()
-        new_writers = AddressList()
-        for server_list in server_lists:
-            role = server_list["role"]
-            addresses = map(Address.parse, server_list["addresses"])
-            if role == "ROUTE":
-                new_routers[:] = addresses
-            elif role == "READ":
-                new_readers[:] = addresses
-            elif role == "WRITE":
-                new_writers[:] = addresses
-        self.routers[:] = new_routers
-        self.readers[:] = new_readers
-        self.writers[:] = new_writers
+    def update_from_profiles(self, routers, readers, writers, ttl):
+        self.routers[:] = [machine.address for machine in routers]
+        self.readers[:] = [machine.address for machine in readers]
+        self.writers[:] = [machine.address for machine in writers]
         self.last_updated = monotonic()
         self.ttl = ttl
 
@@ -544,34 +558,14 @@ class Neo4jService:
     def update_routing_info(self, tx_context, *, force=False):
         if self._has_valid_routing_table(tx_context) and not force:
             return None
-        with Connection.open(*self.addresses, auth=self.auth) as cx:
-            routing_context = {}
-            records = []
-            if cx.bolt_version >= 4:
-                run = cx.run("CALL dbms.cluster.routing."
-                             "getRoutingTable($rc, $tc)", {
-                                 "rc": routing_context,
-                                 "tc": tx_context,
-                             })
-            else:
-                run = cx.run("CALL dbms.cluster.routing."
-                             "getRoutingTable($rc)", {
-                                 "rc": routing_context,
-                             })
-            cx.pull(-1, -1, records)
-            cx.send_all()
-            cx.fetch_all()
-            if run.error:
-                log.debug(run.error.args[0])
-                return False
-            if records:
-                ttl, server_lists = records[0]
-                rt = self.routing_tables.setdefault(tx_context,
-                                                    Neo4jRoutingTable())
-                rt.update(server_lists, ttl)
-                return True
-            else:
-                return False
+        for router in self.routers():
+            cx = Connection.open(router.profile)
+            routers, readers, writers, ttl = cx.route(tx_context)
+            rt = self.routing_tables.setdefault(tx_context,
+                                                Neo4jRoutingTable())
+            rt.update_from_profiles(routers, readers, writers, ttl)
+            cx.close()
+        return True
 
     def run_console(self):
         self.console = Neo4jConsole(self)
