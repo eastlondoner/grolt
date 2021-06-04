@@ -193,35 +193,24 @@ class Neo4jConsole:
         details:
 
         \b
+        - Docker container in which the server is running
+        - Server mode: CORE, READ_REPLICA or SINGLE
         - Bolt port
         - HTTP port
-        - Server mode: CORE, READ_REPLICA or SINGLE
-        - Whether or not the server is a router
-        - Roles for the current tx context: (r)ead or (w)rite
-        - Docker container in which the server is running
         - Debug port
 
         """
-        self.service.update_routing_info(self.tx_context, force=refresh)
-        click.echo("NAME        BOLT PORT   HTTP PORT   "
-                   "MODE           ROUTER   ROLES   CONTAINER   "
-                   "DEBUG PORT")
-        for spec, machine in self.service.machines.items() :
+        click.echo("NAME        CONTAINER   MODE           "
+                   "BOLT PORT   HTTP PORT   DEBUG PORT")
+        for spec, machine in self.service.machines.items():
             if spec is None or machine is None:
                 continue
-            roles = ""
-            if machine in self.service.readers(self.tx_context):
-                roles += "r"
-            if machine in self.service.writers(self.tx_context):
-                roles += "w"
-            click.echo("{:<12}{:<12}{:<12}{:<15}{:<9}{:<8}{:<12}{}".format(
+            click.echo("{:<12}{:<12}{:<15}{:<12}{:<12}{}".format(
                 spec.fq_name,
+                machine.container.short_id,
+                spec.config.get("dbms.mode", "SINGLE"),
                 spec.bolt_port,
                 spec.http_port,
-                spec.config.get("dbms.mode", "SINGLE"),
-                "✓" if machine in self.service.routers() else "",
-                roles,
-                machine.container.short_id,
                 spec.debug_opts.port,
             ))
 
