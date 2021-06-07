@@ -83,7 +83,6 @@ class ConfigParamType(click.ParamType):
 
 def watch_log(ctx, param, value):
     watch("grolt", DEBUG if value >= 1 else INFO)
-    watch("urllib3", DEBUG if value >= 1 else INFO)
 
 
 @click.command(context_settings={"ignore_unknown_options": True}, help="""\
@@ -147,9 +146,7 @@ passed. These are:
                    "repository name can be included before the colon, but will "
                    "default to 'neo4j' if omitted. Note that a Neo4j "
                    "Enterprise Edition image is required for building "
-                   "clusters. To pull the latest snapshot, use the pseudo-tag "
-                   "'snapshot'. To force a download (in case of caching), add "
-                   "a trailing '!'. File URLs can also be passed, which can "
+                   "clusters. File URLs can also be passed, which can "
                    "allow for loading images from local tar files.")
 @click.option("-I", "--import-dir", type=Path(exists=True, dir_okay=True,
                                               writable=True),

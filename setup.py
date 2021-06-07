@@ -35,10 +35,8 @@ package_metadata = {
     },
     "packages": packages,
     "install_requires": [
-        "certifi",
         "click~=7.0",
         "docker",
-        "urllib3<1.25,>=1.23",
         "py2neo",
         'pyreadline>=2.1 ; platform_system=="Windows"',
     ],
