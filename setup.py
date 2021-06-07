@@ -35,9 +35,9 @@ package_metadata = {
     },
     "packages": packages,
     "install_requires": [
-        "click~=7.0",
+        "click",
         "docker",
-        "py2neo",
+        "py2neo>=2021.1.4",
         'pyreadline>=2.1 ; platform_system=="Windows"',
     ],
     "license": "Apache License, Version 2.0",

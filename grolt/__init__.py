@@ -21,8 +21,7 @@ from inspect import getmembers
 from logging import getLogger
 from math import ceil
 from os import makedirs
-from os.path import isdir
-from os.path import join as path_join
+from os.path import isdir, join as path_join
 from random import choice
 from shlex import split as shlex_split
 from threading import Thread
@@ -33,9 +32,14 @@ from webbrowser import open as open_browser
 
 import click
 from click import BadParameter, ClickException
+from docker import DockerClient
+from docker.errors import APIError, ImageNotFound
 from py2neo import ServiceProfile, ConnectionProfile, ConnectionUnavailable
 from py2neo.addressing import Address
 from py2neo.client import Connector, Connection
+
+
+docker = DockerClient.from_env(version="auto")
 
 log = getLogger(__name__)
 
@@ -73,16 +77,15 @@ def resolve_image(image):
     - file:/home/me/image.tar
 
     """
-    resolved = image
-    if resolved.startswith("file:"):
-        return load_image_from_file(resolved[5:])
-    if ":" not in resolved:
+    if image.startswith("file:"):
+        return load_image_from_file(image[5:])
+    elif ":" in image:
+        return image
+    else:
         return "neo4j:" + image
 
 
 def load_image_from_file(name):
-    from docker import DockerClient
-    docker = DockerClient.from_env(version="auto")
     with open(name, "rb") as f:
         images = docker.images.load(f.read())
         image = images[0]
@@ -272,14 +275,11 @@ class Neo4jMachine:
     ready = 0
 
     def __init__(self, spec, image, auth):
-        from docker import DockerClient
-        from docker.errors import ImageNotFound
         self.spec = spec
         self.image = image
         self.address = Address(("localhost", self.spec.bolt_port))
         self.auth = auth
         self.profile = ConnectionProfile(port=self.spec.bolt_port, auth=self.auth)
-        self.docker = DockerClient.from_env(version="auto")
         environment = {}
         if self.auth:
             environment["NEO4J_AUTH"] = "/".join(self.auth)
@@ -304,7 +304,7 @@ class Neo4jMachine:
             volumes = None
 
         def create_container(img):
-            return self.docker.containers.create(
+            return docker.containers.create(
                 img,
                 detach=True,
                 environment=environment,
@@ -319,7 +319,7 @@ class Neo4jMachine:
             self.container = create_container(self.image)
         except ImageNotFound:
             log.info("Downloading Docker image %r", self.image)
-            self.docker.images.pull(self.image)
+            docker.images.pull(self.image)
             self.container = create_container(self.image)
 
     def __hash__(self):
@@ -331,7 +331,6 @@ class Neo4jMachine:
             self.image, self.address)
 
     def start(self):
-        from docker.errors import APIError
         log.info("Starting machine %r at "
                  "«%s»", self.spec.fq_name, self.address)
         try:
@@ -346,7 +345,6 @@ class Neo4jMachine:
                   "«%s»", self.spec.fq_name, self.ip_address)
 
     def restart(self):
-        from docker.errors import APIError
         log.info("Restarting machine %r at "
                  "«%s»", self.spec.fq_name, self.address)
         try:
@@ -461,9 +459,7 @@ class Neo4jService:
                  bolt_port=None, http_port=None, https_port=None,
                  debug_port=None, debug_suspend=None, dir_spec=None,
                  config=None, env=None):
-        from docker import DockerClient
         self.name = name or self._random_name()
-        self.docker = DockerClient.from_env(version="auto")
         self.image = resolve_image(image or self.default_image)
         self.auth = Auth(*auth) if auth else make_auth()
         if self.auth.user != "neo4j":
@@ -505,7 +501,7 @@ class Neo4jService:
 
     def start(self, timeout=None):
         log.info("Starting service %r with image %r", self.name, self.image)
-        self.network = self.docker.networks.create(self.name)
+        self.network = docker.networks.create(self.name)
         self._for_each_machine(lambda machine: machine.start)
         if timeout is not None:
             self.await_started(timeout)
@@ -534,8 +530,6 @@ class Neo4jService:
 
     @classmethod
     def find_and_stop(cls, service_name):
-        from docker import DockerClient
-        docker = DockerClient.from_env(version="auto")
         for container in docker.containers.list(all=True):
             if container.name.endswith(".{}".format(service_name)):
                 container.stop()
@@ -937,9 +931,9 @@ class Neo4jConsole:
                 spec.fq_name,
                 machine.container.short_id,
                 spec.config.get("dbms.mode", "SINGLE"),
-                spec.bolt_port,
-                spec.http_port,
-                spec.debug_opts.port,
+                spec.bolt_port or "-",
+                spec.http_port or "-",
+                spec.debug_opts.port or "-",
             ))
 
     @click.command()

@@ -326,10 +326,10 @@ def grolt(
                 neo4j.run_console()
     except KeyboardInterrupt:
         sys.exit(130)
-    except Exception as e:
-        message = " ".join(map(str, e.args))
-        if hasattr(e, 'explanation'):
-            message += "\n" + e.explanation
+    except Exception as error:
+        message = " ".join(map(str, error.args))
+        if hasattr(error, 'explanation'):
+            message += "\n" + error.explanation
         click.echo(message, err=True)
         sys.exit(1)
 
