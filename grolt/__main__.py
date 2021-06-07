@@ -16,16 +16,26 @@
 # limitations under the License.
 
 
-import sys
-from logging import INFO, DEBUG
+from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter, StreamHandler, getLogger
 from shlex import quote as shlex_quote
 from subprocess import run
+import sys
+from sys import stdout
 
 import click
 from click import ParamType, Path
 
 from grolt import make_auth, Neo4jService, Neo4jDirectorySpec
-from grolt.watcher import watch
+
+# The readline import allows for extended input functionality, including
+# up/down arrow navigation. This should not be removed.
+try:
+    import readline
+except ModuleNotFoundError as e:
+    # readline is not available for windows 10
+    # noinspection PyUnresolvedReferences
+    from pyreadline import Readline
+    readline = Readline()
 
 
 class AuthParamType(ParamType):
@@ -81,8 +91,89 @@ class ConfigParamType(click.ParamType):
         return 'NAME=VALUE'
 
 
+def yellow(s):
+    return "\x1b[33m{:s}\x1b[0m".format(s)
+
+
+def blue(s):
+    return "\x1b[34m{:s}\x1b[0m".format(s)
+
+
+def magenta(s):
+    return "\x1b[35m{:s}\x1b[0m".format(s)
+
+
+def cyan(s):
+    return "\x1b[36m{:s}\x1b[0m".format(s)
+
+
+def white(s):
+    return "\x1b[36m{:s}\x1b[0m".format(s)
+
+
+def bright_black(s):
+    return "\x1b[30;1m{:s}\x1b[0m".format(s)
+
+
+def bright_red(s):
+    return "\x1b[31;1m{:s}\x1b[0m".format(s)
+
+
+def bright_yellow(s):
+    return "\x1b[33;1m{:s}\x1b[0m".format(s)
+
+
+class ColourFormatter(Formatter):
+
+    def format(self, record):
+        s = super(ColourFormatter, self).format(record)
+        bits = s.split("  ", maxsplit=1)
+        bits[0] = blue(bits[0])
+        if record.levelno == CRITICAL:
+            bits[1] = bright_red(bits[1])
+        elif record.levelno == ERROR:
+            bits[1] = bright_yellow(bits[1])
+        elif record.levelno == WARNING:
+            bits[1] = yellow(bits[1])
+        elif record.levelno == INFO:
+            bits[1] = bits[1]
+        elif record.levelno == DEBUG:
+            bits[1] = cyan(bits[1])
+        return "  ".join(bits)
+
+
+class Watcher(object):
+    """ Log watcher for monitoring driver and protocol activity.
+    """
+
+    handlers = {}
+
+    def __init__(self, logger_name):
+        super(Watcher, self).__init__()
+        self.logger_name = logger_name
+        self.logger = getLogger(self.logger_name)
+        self.formatter = ColourFormatter("%(asctime)s  %(message)s",
+                                         "%H:%M:%S")
+
+    def watch(self, level=INFO, out=stdout):
+        self.stop()
+        handler = StreamHandler(out)
+        handler.setFormatter(self.formatter)
+        self.handlers[self.logger_name] = handler
+        self.logger.addHandler(handler)
+        self.logger.setLevel(level)
+
+    def stop(self):
+        try:
+            self.logger.removeHandler(self.handlers[self.logger_name])
+        except KeyError:
+            pass
+
+
 def watch_log(ctx, param, value):
-    watch("grolt", DEBUG if value >= 1 else INFO)
+    watcher = Watcher("grolt")
+    watcher.watch(DEBUG if value >= 1 else INFO)
+    return watcher
 
 
 @click.command(context_settings={"ignore_unknown_options": True}, help="""\
