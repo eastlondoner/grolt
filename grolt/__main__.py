@@ -22,45 +22,31 @@ from shlex import quote as shlex_quote
 from subprocess import run
 
 import click
-from click import Path
+from click import ParamType, Path
 
-from grolt.addressing import Address, AddressList
-from grolt.auth import AuthParamType
-from grolt.server import Neo4jService, Neo4jDirectorySpec
+from grolt import make_auth, Neo4jService, Neo4jDirectorySpec
 from grolt.watcher import watch
 
 
-class AddressParamType(click.ParamType):
+class AuthParamType(ParamType):
 
-    name = "addr"
+    name = "auth"
 
-    def __init__(self, default_host=None, default_port=None):
-        self.default_host = default_host
-        self.default_port = default_port
-
-    def convert(self, value, param, ctx):
-        return Address.parse(value, self.default_host, self.default_port)
-
-    def __repr__(self):
-        return 'HOST:PORT'
-
-
-class AddressListParamType(click.ParamType):
-
-    name = "addr"
-
-    def __init__(self, default_host=None, default_port=None):
-        self.default_host = default_host
-        self.default_port = default_port
+    def __init__(self, default_user=None, default_password=None):
+        self.default_user = default_user
+        self.default_password = default_password
 
     def convert(self, value, param, ctx):
-        return AddressList.parse(value, self.default_host, self.default_port)
+        try:
+            return make_auth(value, self.default_user, self.default_password)
+        except ValueError as e:
+            self.fail(e.args[0], param, ctx)
 
     def __repr__(self):
-        return 'HOST:PORT [HOST:PORT...]'
+        return 'USER:PASSWORD'
 
 
-class VolumeMount():
+class VolumeMount:
     def __init__(self, source, destination):
         self.source = source
         self.destination = destination

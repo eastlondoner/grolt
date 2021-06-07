@@ -19,7 +19,7 @@
 from setuptools import setup, find_packages
 
 
-packages = find_packages(exclude=("tests", "tests.*"))
+packages = find_packages()
 package_metadata = {
     "name": "grolt",
     "version": "1.0.1",

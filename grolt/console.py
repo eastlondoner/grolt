@@ -17,34 +17,30 @@
 
 
 from inspect import getmembers
-from logging import getLogger
 from shlex import split as shlex_split
 from time import sleep
 from webbrowser import open as open_browser
 
 import click
+from click import BadParameter, ClickException
+from py2neo import ServiceProfile
+from py2neo.client import Connector
 
-from grolt.addressing import AddressList
 
 # The readline import allows for extended input functionality, including
 # up/down arrow navigation. This should not be removed.
-#
-# noinspection PyUnresolvedReferences
 try:
     import readline
 except ModuleNotFoundError as e:
     # readline is not available for windows 10
+    # noinspection PyUnresolvedReferences
     from pyreadline import Readline
     readline = Readline()
-
-log = getLogger("grolt")
 
 
 class Neo4jConsole:
 
     args = None
-
-    tx_context = "system"
 
     def __init__(self, service):
         self.service = service
@@ -58,12 +54,12 @@ class Neo4jConsole:
         try:
             f = getattr(self, name)
         except AttributeError:
-            raise click.UsageError('No such command "%s".' % name)
+            raise BadParameter('No such command "%s".' % name)
         else:
             if isinstance(f, click.Command):
                 return f
             else:
-                raise click.UsageError('No such command "%s".' % name)
+                raise BadParameter('No such command "%s".' % name)
 
     def _iter_machines(self, name):
         if not name:
@@ -84,8 +80,8 @@ class Neo4jConsole:
         # nicely with readline. Instead, we use click.echo for the main prompt
         # text and a raw input call to read from stdin.
         text = "".join([
-            click.style(self.tx_context, fg="cyan"),
-            click.style(">", fg="bright_black"),
+            click.style(self.service.name, fg="green"),
+            click.style(">"),
         ])
         prompt_suffix = " "
         click.echo(text, nl=False)
@@ -106,10 +102,8 @@ class Neo4jConsole:
             return f.invoke(ctx)
         except click.exceptions.Exit:
             pass
-        except click.ClickException as e:
-            click.echo(e.format_message())
-        except RuntimeError as e:
-            log.error("{}".format(e.args[0]))
+        except ClickException as error:
+            click.echo(error.format_message(), err=True)
 
     @click.command()
     @click.argument("machine", required=False)
@@ -128,7 +122,7 @@ class Neo4jConsole:
             open_browser(m.spec.http_uri)
 
         if not self._for_each_machine(machine, f):
-            raise RuntimeError("Machine {!r} not found".format(machine))
+            raise BadParameter("Machine {!r} not found".format(machine))
 
     @click.command()
     @click.pass_obj
@@ -162,7 +156,7 @@ class Neo4jConsole:
             try:
                 f = self[command]
             except KeyError:
-                raise RuntimeError('No such command "%s".' % command)
+                raise BadParameter('No such command "%s".' % command)
             else:
                 ctx = self.help.make_context(command, [], obj=self)
                 click.echo(f.get_help(ctx))
@@ -226,32 +220,26 @@ class Neo4jConsole:
             m.ping(timeout=0)
 
         if not self._for_each_machine(machine, f):
-            raise RuntimeError("Machine {!r} not found".format(machine))
+            raise BadParameter("Machine {!r} not found".format(machine))
 
     @click.command()
-    @click.option("-r", "--refresh", is_flag=True,
-                  help="Refresh the routing table")
+    @click.argument("gdb", required=False)
     @click.pass_obj
-    def rt(self, refresh):
-        """ Display the routing table.
-
-        The routing information is cached so that any subsequent `ls` can show
-        role information along with each server.
+    def rt(self, gdb):
+        """ Display the routing table for a given graph database.
         """
-        updated = self.service.update_routing_info(self.tx_context,
-                                                   force=refresh)
-        if updated is False:
-            raise RuntimeError("No routing data available for "
-                               "context {!r}".format(self.tx_context))
-        click.echo("Routers: «%s»" % AddressList(
-            m.address for m in self.service.routers()))
-        click.echo("Readers: «%s»" % AddressList(
-            m.address for m in self.service.readers(self.tx_context)))
-        click.echo("Writers: «%s»" % AddressList(
-            m.address for m in self.service.writers(self.tx_context)))
-        click.echo("(TTL: {!r}s, age: {})".format(
-            self.service.ttl(self.tx_context),
-            self.service.routing_tables[self.tx_context].age()))
+        routers = self.service.routers()
+        cx = Connector(ServiceProfile(routers[0].profile, routing=True))
+        if gdb is None:
+            click.echo("Refreshing routing information for the default graph database...")
+        else:
+            click.echo("Refreshing routing information for graph database %r..." % gdb)
+        rt = cx.refresh_routing_table(gdb)
+        ro_profiles, rw_profiles, _ = rt.runners()
+        click.echo("Routers: %s" % " ".join(map(str, cx.get_router_profiles())))
+        click.echo("Readers: %s" % " ".join(map(str, ro_profiles)))
+        click.echo("Writers: %s" % " ".join(map(str, rw_profiles)))
+        cx.close()
 
     @click.command()
     @click.argument("machine", required=False)
@@ -266,7 +254,7 @@ class Neo4jConsole:
             click.echo(m.container.logs())
 
         if not self._for_each_machine(machine, f):
-            raise RuntimeError("Machine {!r} not found".format(machine))
+            raise BadParameter("Machine {!r} not found".format(machine))
 
     @click.command()
     @click.argument("time", type=float)
@@ -279,23 +267,15 @@ class Neo4jConsole:
         """
 
         def f(m):
-            log.info("Pausing machine {!r} for {}s".format(m.spec.fq_name,
-                                                           time))
+            click.echo("Pausing machine {!r} for {}s".format(m.spec.fq_name,
+                                                             time))
             m.container.pause()
             sleep(time)
             m.container.unpause()
             m.ping(timeout=0)
 
         if not self._for_each_machine(machine, f):
-            raise RuntimeError("Machine {!r} not found".format(machine))
-
-    @click.command()
-    @click.argument("context")
-    @click.pass_obj
-    def use(self, context):
-        """ Select a database context.
-        """
-        self.tx_context = context
+            raise BadParameter("Machine {!r} not found".format(machine))
 
 
 class Neo4jClusterConsole(Neo4jConsole):
@@ -318,8 +298,8 @@ class Neo4jClusterConsole(Neo4jConsole):
         elif mode in ("r", "rr", "replica", "read-replica", "read_replica"):
             self.service.add_replica()
         else:
-            raise click.UsageError('Invalid value for "MODE", choose from '
-                                   '"core" or "read-replica"'.format(mode))
+            raise BadParameter('Invalid value for "MODE", choose from '
+                               '"core" or "read-replica"'.format(mode))
 
     @click.command()
     @click.argument("machine")
@@ -331,7 +311,7 @@ class Neo4jClusterConsole(Neo4jConsole):
         or by the role they fulfil (i.e. 'r' or 'w').
         """
         if not self.service.remove(machine):
-            raise RuntimeError("Machine {!r} not found".format(machine))
+            raise BadParameter("Machine {!r} not found".format(machine))
 
     @click.command()
     @click.argument("machine")
@@ -343,4 +323,4 @@ class Neo4jClusterConsole(Neo4jConsole):
         or by the role they fulfil (i.e. 'r' or 'w').
         """
         if not self.service.reboot(machine):
-            raise RuntimeError("Machine {!r} not found".format(machine))
+            raise BadParameter("Machine {!r} not found".format(machine))

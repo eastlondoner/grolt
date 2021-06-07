@@ -28,7 +28,7 @@ log = getLogger("grolt")
 
 
 snapshot_host = "live.neo4j-build.io"
-snapshot_build_config_id = "Neo4j40_Docker"
+snapshot_build_config_id = "Neo4j43_Docker"
 snapshot_build_url = ("https://{}/repository/download/{}/"
                       "lastSuccessful".format(snapshot_host,
                                               snapshot_build_config_id))
