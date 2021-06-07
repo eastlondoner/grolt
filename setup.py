@@ -22,7 +22,7 @@ from setuptools import setup, find_packages
 packages = find_packages()
 package_metadata = {
     "name": "grolt",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Docker-based development and testing framework for Neo4j",
     "long_description": "Please see https://github.com/technige/grolt "
                         "for details.",
