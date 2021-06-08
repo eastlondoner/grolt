@@ -17,15 +17,15 @@
 
 
 from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter, StreamHandler, getLogger
-from shlex import quote as shlex_quote
-from subprocess import run
+from subprocess import call
 import sys
 from sys import stdout
 
 import click
 from click import ParamType, Path
 
-from grolt import make_auth, Neo4jService, Neo4jDirectorySpec
+from grolt import make_auth, Neo4jService, Neo4jDirectorySpec, __name__ as root_module_name
+from grolt.polyfill import shlex_quote
 
 # The readline import allows for extended input functionality, including
 # up/down arrow navigation. This should not be removed.
@@ -49,14 +49,14 @@ class AuthParamType(ParamType):
     def convert(self, value, param, ctx):
         try:
             return make_auth(value, self.default_user, self.default_password)
-        except ValueError as e:
-            self.fail(e.args[0], param, ctx)
+        except ValueError as error:
+            self.fail(error.args[0], param, ctx)
 
     def __repr__(self):
         return 'USER:PASSWORD'
 
 
-class VolumeMount:
+class VolumeMount(object):
     def __init__(self, source, destination):
         self.source = source
         self.destination = destination
@@ -91,54 +91,22 @@ class ConfigParamType(click.ParamType):
         return 'NAME=VALUE'
 
 
-def yellow(s):
-    return "\x1b[33m{:s}\x1b[0m".format(s)
-
-
-def blue(s):
-    return "\x1b[34m{:s}\x1b[0m".format(s)
-
-
-def magenta(s):
-    return "\x1b[35m{:s}\x1b[0m".format(s)
-
-
-def cyan(s):
-    return "\x1b[36m{:s}\x1b[0m".format(s)
-
-
-def white(s):
-    return "\x1b[36m{:s}\x1b[0m".format(s)
-
-
-def bright_black(s):
-    return "\x1b[30;1m{:s}\x1b[0m".format(s)
-
-
-def bright_red(s):
-    return "\x1b[31;1m{:s}\x1b[0m".format(s)
-
-
-def bright_yellow(s):
-    return "\x1b[33;1m{:s}\x1b[0m".format(s)
-
-
 class ColourFormatter(Formatter):
 
     def format(self, record):
         s = super(ColourFormatter, self).format(record)
-        bits = s.split("  ", maxsplit=1)
-        bits[0] = blue(bits[0])
+        bits = s.split("  ", 1)
+        bits[0] = click.style(bits[0], fg="blue")
         if record.levelno == CRITICAL:
-            bits[1] = bright_red(bits[1])
+            bits[1] = click.style(bits[1], fg="bright_red")
         elif record.levelno == ERROR:
-            bits[1] = bright_yellow(bits[1])
+            bits[1] = click.style(bits[1], fg="bright_yellow")
         elif record.levelno == WARNING:
-            bits[1] = yellow(bits[1])
+            bits[1] = click.style(bits[1], fg="yellow")
         elif record.levelno == INFO:
-            bits[1] = bits[1]
+            pass
         elif record.levelno == DEBUG:
-            bits[1] = cyan(bits[1])
+            bits[1] = click.style(bits[1], fg="cyan")
         return "  ".join(bits)
 
 
@@ -171,7 +139,7 @@ class Watcher(object):
 
 
 def watch_log(ctx, param, value):
-    watcher = Watcher("grolt")
+    watcher = Watcher(root_module_name)
     watcher.watch(DEBUG if value >= 1 else INFO)
     return watcher
 
@@ -320,8 +288,8 @@ def grolt(
                 env_dict
         ) as neo4j:
             if command:
-                run(" ".join(map(shlex_quote, command)), shell=True,
-                    env=neo4j.env())
+                call(" ".join(map(shlex_quote, command)), shell=True,
+                     env=neo4j.env())
             else:
                 neo4j.run_console()
     except KeyboardInterrupt:

@@ -25,7 +25,7 @@ from os.path import isdir, join as path_join
 from random import choice
 from shlex import split as shlex_split
 from threading import Thread
-from time import sleep, perf_counter
+from time import sleep
 from uuid import uuid4
 from xml.etree import ElementTree
 from webbrowser import open as open_browser
@@ -34,9 +34,15 @@ import click
 from click import BadParameter, ClickException
 from docker import DockerClient
 from docker.errors import APIError, ImageNotFound
+from monotonic import monotonic
 from py2neo import ServiceProfile, ConnectionProfile, ConnectionUnavailable
 from py2neo.addressing import Address
 from py2neo.client import Connector, Connection
+
+try:
+    input_line = raw_input
+except NameError:
+    input_line = input
 
 
 docker = DockerClient.from_env(version="auto")
@@ -92,7 +98,7 @@ def load_image_from_file(name):
         return image.tags[0]
 
 
-class Neo4jDirectorySpec:
+class Neo4jDirectorySpec(object):
 
     def __init__(self,
                  certificates_dir=None,
@@ -141,16 +147,21 @@ class Neo4jDirectorySpec:
             pom = ElementTree.parse(self.neo4j_source_dir + "/pom.xml").getroot()
             xml_tag_prefix = pom.tag.split("project")[0]
             neo4j_version = pom.find(xml_tag_prefix+"version").text
-            lib = self.neo4j_source_dir + f"/private/packaging/standalone/target/neo4j-enterprise-{neo4j_version}-unix/neo4j-enterprise-{neo4j_version}/lib"
-            bin = self.neo4j_source_dir + f"/private/packaging/standalone/target/neo4j-enterprise-{neo4j_version}-unix/neo4j-enterprise-{neo4j_version}/bin"
-            if not isdir(lib):
-                raise Exception(f"Could not find packaged neo4j source at {lib}\nPerhaps you need to run mvn package?")
+            lib_dir = ("{}/private/packaging/standalone/target/"
+                       "neo4j-enterprise-{}-unix/neo4j-enterprise-{}/"
+                       "lib".format(self.neo4j_source_dir, neo4j_version, neo4j_version))
+            bin_dir = ("{}/private/packaging/standalone/target/"
+                       "neo4j-enterprise-{}-unix/neo4j-enterprise-{}/"
+                       "bin".format(self.neo4j_source_dir, neo4j_version, neo4j_version))
+            if not isdir(lib_dir):
+                raise Exception("Could not find packaged neo4j source at {}\n"
+                                "Perhaps you need to run `mvn package`?".format(lib_dir))
 
-            volumes[lib] = {
+            volumes[lib_dir] = {
                 "bind": "/var/lib/neo4j/lib/",
                 "mode": "ro",
             }
-            volumes[bin] = {
+            volumes[bin_dir] = {
                 "bind": "/var/lib/neo4j/bin/",
                 "mode": "ro",
             }
@@ -158,7 +169,7 @@ class Neo4jDirectorySpec:
         return volumes
 
 
-class Neo4jMachineSpec:
+class Neo4jMachineSpec(object):
     # Base config for all machines. This can be overridden by
     # individual instances.
     config = {
@@ -250,8 +261,8 @@ class Neo4jCoreMachineSpec(Neo4jMachineSpec):
                  dir_spec, config, env):
         config = config or {}
         config["dbms.mode"] = "CORE"
-        super().__init__(name, service_name, bolt_port, http_port, https_port, debug_opts,
-                         dir_spec, config, env)
+        super(Neo4jCoreMachineSpec, self).__init__(name, service_name, bolt_port, http_port,
+                                                   https_port, debug_opts, dir_spec, config, env)
 
 
 class Neo4jReplicaMachineSpec(Neo4jMachineSpec):
@@ -260,11 +271,11 @@ class Neo4jReplicaMachineSpec(Neo4jMachineSpec):
                  dir_spec, config, env):
         config = config or {}
         config["dbms.mode"] = "READ_REPLICA"
-        super().__init__(name, service_name, bolt_port, http_port, https_port, debug_opts,
-                         dir_spec, config, env)
+        super(Neo4jReplicaMachineSpec, self).__init__(name, service_name, bolt_port, http_port,
+                                                      https_port, debug_opts, dir_spec, config, env)
 
 
-class Neo4jMachine:
+class Neo4jMachine(object):
     """ A single Neo4j server instance, potentially part of a cluster.
     """
 
@@ -338,11 +349,11 @@ class Neo4jMachine:
             self.container.reload()
             self.ip_address = (self.container.attrs["NetworkSettings"]
                                ["Networks"][self.spec.service_name]["IPAddress"])
-        except APIError as e:
-            log.info(e)
+        except APIError as error:
+            log.info(error)
 
-        log.debug("Machine %r has internal IP address "
-                  "«%s»", self.spec.fq_name, self.ip_address)
+        log.debug(u"Machine %r has internal IP address "
+                  u"«%s»", self.spec.fq_name, self.ip_address)
 
     def restart(self):
         log.info("Restarting machine %r at "
@@ -352,8 +363,8 @@ class Neo4jMachine:
             self.container.reload()
             self.ip_address = (self.container.attrs["NetworkSettings"]
                                ["Networks"][self.spec.service_name]["IPAddress"])
-        except APIError as e:
-            log.info(e)
+        except APIError as error:
+            log.info(error)
 
         log.debug("Machine %r has internal IP address "
                   "«%s»", self.spec.fq_name, self.ip_address)
@@ -361,7 +372,7 @@ class Neo4jMachine:
     def _poll_connection(self, timeout=0):
         """ Repeatedly attempt to open a connection to a Bolt server.
         """
-        t0 = perf_counter()
+        t0 = monotonic()
         log.debug("Trying to open connection to %s", self.profile)
         errors = set()
         again = True
@@ -374,7 +385,7 @@ class Neo4jMachine:
             else:
                 if cx:
                     return cx
-            again = perf_counter() - t0 < (timeout or 0)
+            again = monotonic() - t0 < (timeout or 0)
             if again:
                 sleep(wait)
                 wait *= 2
@@ -422,7 +433,7 @@ class Neo4jMachine:
         self.container.remove(force=True)
 
 
-class Neo4jService:
+class Neo4jService(object):
     """ A Neo4j database management service.
     """
 
@@ -556,10 +567,9 @@ class Neo4jStandaloneService(Neo4jService):
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
                  debug_suspend=None, dir_spec=None, config=None, env=None):
-        super().__init__(name, image, auth,
-                         n_cores, n_replicas,
-                         bolt_port, http_port, https_port,
-                         dir_spec, config, env)
+        super(Neo4jStandaloneService, self).__init__(name, image, auth, n_cores, n_replicas,
+                                                     bolt_port, http_port, https_port, dir_spec,
+                                                     config, env)
         spec = Neo4jMachineSpec(
             name="a",
             service_name=self.name,
@@ -604,10 +614,9 @@ class Neo4jClusterService(Neo4jService):
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
                  debug_suspend=None, dir_spec=None, config=None, env=None):
-        super().__init__(name, image, auth,
-                         n_cores, n_replicas,
-                         bolt_port, http_port, https_port, debug_port,
-                         debug_suspend, dir_spec, config, env)
+        super(Neo4jClusterService, self).__init__(name, image, auth, n_cores, n_replicas,
+                                                  bolt_port, http_port, https_port, debug_port,
+                                                  debug_suspend, dir_spec, config, env)
         n_cores = n_cores or self.min_cores
         n_replicas = n_replicas or self.min_replicas
         if not self.min_cores <= n_cores <= self.max_cores:
@@ -634,7 +643,8 @@ class Neo4jClusterService(Neo4jService):
                 https_port=core_https_port_range[i],
                 # Only suspend first core in cluster, otherwise cluster won't form until debuggers
                 # connect to all of them.
-                debug_opts=debug_opts_type(debug_suspend if i == 0 else False, core_debug_port_range[i]),
+                debug_opts=debug_opts_type(debug_suspend if i == 0 else False,
+                                           core_debug_port_range[i]),
                 dir_spec=dir_spec,
                 config=dict(config or {}, **{
                     "causal_clustering.minimum_core_cluster_size_at_formation":
@@ -666,7 +676,8 @@ class Neo4jClusterService(Neo4jService):
                 https_port=replica_https_port_range[i],
                 # Only suspend first core in cluster, otherwise cluster won't form until debuggers
                 # connect to all of them.
-                debug_opts=debug_opts_type(debug_suspend if i == 0 else False, replica_debug_port_range[i]),
+                debug_opts=debug_opts_type(debug_suspend if i == 0 else False,
+                                           replica_debug_port_range[i]),
                 dir_spec=dir_spec,
                 config=config,
                 env=env,
@@ -766,7 +777,7 @@ class Neo4jClusterService(Neo4jService):
         return found
 
 
-class Neo4jConsole:
+class Neo4jConsole(object):
 
     args = None
 
@@ -813,7 +824,7 @@ class Neo4jConsole:
         ])
         prompt_suffix = " "
         click.echo(text, nl=False)
-        return input(prompt_suffix)
+        return input_line(prompt_suffix)
 
     def run(self):
         while True:
@@ -903,10 +914,8 @@ class Neo4jConsole:
                         click.echo(template.format("", line))
 
     @click.command()
-    @click.option("-r", "--refresh", is_flag=True,
-                  help="Refresh the routing table")
     @click.pass_obj
-    def ls(self, refresh):
+    def ls(self):
         """ Show a detailed list of the available servers.
 
         Routing information for the current transaction context is refreshed

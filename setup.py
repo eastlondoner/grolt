@@ -35,10 +35,13 @@ package_metadata = {
     },
     "packages": packages,
     "install_requires": [
-        "click",
-        "docker",
+        "click<8.0; python_version<'3.6'",
+        "click; python_version>='3.6'",
+        "docker<5.0; python_version<'3.6'",
+        "docker; python_version>='3.6'",
+        "monotonic",
         "py2neo>=2021.1.4",
-        'pyreadline>=2.1 ; platform_system=="Windows"',
+        "pyreadline>=2.1; platform_system=='Windows'",
     ],
     "license": "Apache License, Version 2.0",
     "classifiers": [
