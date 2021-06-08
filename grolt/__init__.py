@@ -39,10 +39,7 @@ from py2neo import ServiceProfile, ConnectionProfile, ConnectionUnavailable
 from py2neo.addressing import Address
 from py2neo.client import Connector, Connection
 
-try:
-    input_line = raw_input
-except NameError:
-    input_line = input
+from six.moves import input
 
 
 docker = DockerClient.from_env(version="auto")
@@ -444,12 +441,6 @@ class Neo4jService(object):
     default_https_port = 7473
     default_debug_port = 5005
 
-    snapshot_host = "live.neo4j-build.io"
-    snapshot_build_config_id = "Neo4j40_Docker"
-    snapshot_build_url = ("https://{}/repository/download/{}/"
-                          "lastSuccessful".format(snapshot_host,
-                                                  snapshot_build_config_id))
-
     def __new__(cls, name=None, image=None, auth=None,
                 n_cores=None, n_replicas=None,
                 bolt_port=None, http_port=None, https_port=None,
@@ -824,7 +815,7 @@ class Neo4jConsole(object):
         ])
         prompt_suffix = " "
         click.echo(text, nl=False)
-        return input_line(prompt_suffix)
+        return input(prompt_suffix)
 
     def run(self):
         while True:

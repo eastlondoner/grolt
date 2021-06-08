@@ -44,6 +44,7 @@ package_metadata = {
         "monotonic",
         "py2neo>=2021.1.4",
         "pyreadline>=2.1; platform_system=='Windows'",
+        "six",
     ],
     "license": "Apache License, Version 2.0",
     "classifiers": [
