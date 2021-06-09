@@ -16,6 +16,8 @@
 # limitations under the License.
 
 
+from __future__ import division
+
 from collections import namedtuple
 from inspect import getmembers
 from logging import getLogger
@@ -93,6 +95,13 @@ def load_image_from_file(name):
         images = docker.images.load(f.read())
         image = images[0]
         return image.tags[0]
+
+
+def port_range(base_port, count):
+    if base_port:
+        return list(range(base_port, base_port + count))
+    else:
+        return [0] * count
 
 
 class Neo4jDirectorySpec(object):
@@ -180,18 +189,9 @@ class Neo4jMachineSpec(object):
     debug_port = 5100
     bolt_internal_port = 7688
 
-    def __init__(
-            self,
-            name,
-            service_name,
-            bolt_port,
-            http_port,
-            https_port,
-            debug_opts,
-            dir_spec,
-            config,
-            env
-    ):
+    def __init__(self, name, service_name,
+                 bolt_port, http_port, https_port, debug_opts,
+                 dir_spec, config, env):
         self.name = name
         self.service_name = service_name
         self.bolt_port = bolt_port
@@ -213,7 +213,11 @@ class Neo4jMachineSpec(object):
             self.config.update(**config)
 
     def __hash__(self):
-        return hash(self.fq_name)
+        return hash((self.name, self.service_name))
+
+    @property
+    def dbms_mode(self):
+        return self.config.get("dbms.mode")
 
     @property
     def fq_name(self):
@@ -224,20 +228,8 @@ class Neo4jMachineSpec(object):
         return "{}:{}".format(self.fq_name, self.discovery_port)
 
     @property
-    def transaction_address(self):
-        return "{}:{}".format(self.fq_name, self.transaction_port)
-
-    @property
-    def raft_address(self):
-        return "{}:{}".format(self.fq_name, self.raft_port)
-
-    @property
     def http_uri(self):
         return "http://localhost:{}".format(self.http_port)
-
-    @property
-    def bolt_address(self):
-        return Address(("localhost", self.bolt_port))
 
     @property
     def bolt_internal_address(self):
@@ -482,11 +474,10 @@ class Neo4jService(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
 
-    def _get_machine_by_address(self, address):
-        address = Address((address.host, address.port_number))
+    def boot(self):
         for spec, machine in self.machines.items():
-            if spec.bolt_address == address:
-                return machine
+            if machine is None:
+                self.machines[spec] = Neo4jMachine(spec, self.image, self.auth)
 
     def routers(self):
         return list(self.machines.values())
@@ -572,11 +563,8 @@ class Neo4jStandaloneService(Neo4jService):
             config=config,
             env=env,
         )
-        self.machines[spec] = Neo4jMachine(
-            spec,
-            self.image,
-            auth=self.auth,
-        )
+        self.machines[spec] = None
+        self.boot()
 
 
 class Neo4jClusterService(Neo4jService):
@@ -593,13 +581,6 @@ class Neo4jClusterService(Neo4jService):
     default_bolt_port = 17601
     default_http_port = 17401
     default_debug_port = 15001
-
-    @classmethod
-    def _port_range(cls, base_port, count):
-        if base_port is None:
-            return [None] * count
-        else:
-            return range(base_port, base_port + count)
 
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
@@ -618,13 +599,13 @@ class Neo4jClusterService(Neo4jService):
                              "read replicas".format(self.min_replicas,
                                                     self.max_replicas))
 
-        core_bolt_port_range = self._port_range(
+        core_bolt_port_range = port_range(
             bolt_port or self.default_bolt_port, self.max_cores)
-        core_http_port_range = self._port_range(
+        core_http_port_range = port_range(
             http_port or self.default_http_port, self.max_cores)
-        core_https_port_range = self._port_range(
+        core_https_port_range = port_range(
             https_port or self.default_https_port, self.max_cores)
-        core_debug_port_range = self._port_range(debug_port, self.max_cores)
+        core_debug_port_range = port_range(debug_port, self.max_cores)
         self.free_core_machine_specs = [
             Neo4jCoreMachineSpec(
                 name=chr(97 + i),
@@ -647,17 +628,17 @@ class Neo4jClusterService(Neo4jService):
             )
             for i in range(self.max_cores)
         ]
-        replica_bolt_port_range = self._port_range(
-            ceil(core_bolt_port_range.stop / 10) * 10 + 1, self.max_replicas)
-        replica_http_port_range = self._port_range(
-            ceil(core_http_port_range.stop / 10) * 10 + 1, self.max_replicas)
-        replica_https_port_range = self._port_range(
-            ceil(core_https_port_range.stop / 10) * 10 + 1, self.max_replicas)
+        replica_bolt_port_range = port_range(
+            ceil(core_bolt_port_range[-1] / 10) * 10 + 1, self.max_replicas)
+        replica_http_port_range = port_range(
+            ceil(core_http_port_range[-1] / 10) * 10 + 1, self.max_replicas)
+        replica_https_port_range = port_range(
+            ceil(core_https_port_range[-1] / 10) * 10 + 1, self.max_replicas)
         if debug_port:
-            replica_debug_port_range = self._port_range(
-                ceil(core_debug_port_range.stop / 10) * 10 + 1, self.max_replicas)
+            replica_debug_port_range = port_range(
+                ceil(core_debug_port_range[-1] / 10) * 10 + 1, self.max_replicas)
         else:
-            replica_debug_port_range = self._port_range(None, self.max_replicas)
+            replica_debug_port_range = port_range(None, self.max_replicas)
         self.free_replica_machine_specs = [
             Neo4jReplicaMachineSpec(
                 name=chr(49 + i),
@@ -685,11 +666,12 @@ class Neo4jClusterService(Neo4jService):
             spec = self.free_replica_machine_specs.pop(0)
             self.machines[spec] = None
 
-        self._boot_machines()
+        self.boot()
 
-    def _boot_machines(self):
+    def boot(self):
         discovery_addresses = [spec.discovery_address for spec in self.machines
                                if isinstance(spec, Neo4jCoreMachineSpec)]
+        log.debug("Discovery addresses set to %r" % discovery_addresses)
         for spec, machine in self.machines.items():
             if machine is None:
                 spec.config.update({
@@ -719,7 +701,7 @@ class Neo4jClusterService(Neo4jService):
         if len(self.cores()) < self.max_cores:
             spec = self.free_core_machine_specs.pop(0)
             self.machines[spec] = None
-            self._boot_machines()
+            self.boot()
             self.machines[spec].start()
             self.machines[spec].await_started(300)
         else:
@@ -732,7 +714,7 @@ class Neo4jClusterService(Neo4jService):
         if len(self.replicas()) < self.max_replicas:
             spec = self.free_replica_machine_specs.pop(0)
             self.machines[spec] = None
-            self._boot_machines()
+            self.boot()
             self.machines[spec].start()
             self.machines[spec].await_started(300)
         else:
@@ -744,8 +726,10 @@ class Neo4jClusterService(Neo4jService):
         del self.machines[spec]
         machine.stop()
         if isinstance(spec, Neo4jCoreMachineSpec):
+            assert spec.dbms_mode == "CORE"
             self.free_core_machine_specs.append(spec)
         elif isinstance(spec, Neo4jReplicaMachineSpec):
+            assert spec.dbms_mode == "READ_REPLICA"
             self.free_replica_machine_specs.append(spec)
 
     def remove(self, name):
