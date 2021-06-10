@@ -244,26 +244,6 @@ class Neo4jMachineSpec(object):
             )
 
 
-class Neo4jCoreMachineSpec(Neo4jMachineSpec):
-
-    def __init__(self, name, service_name, bolt_port, http_port, https_port, debug_opts,
-                 dir_spec, config, env):
-        config = config or {}
-        config["dbms.mode"] = "CORE"
-        super(Neo4jCoreMachineSpec, self).__init__(name, service_name, bolt_port, http_port,
-                                                   https_port, debug_opts, dir_spec, config, env)
-
-
-class Neo4jReplicaMachineSpec(Neo4jMachineSpec):
-
-    def __init__(self, name, service_name, bolt_port, http_port, https_port, debug_opts,
-                 dir_spec, config, env):
-        config = config or {}
-        config["dbms.mode"] = "READ_REPLICA"
-        super(Neo4jReplicaMachineSpec, self).__init__(name, service_name, bolt_port, http_port,
-                                                      https_port, debug_opts, dir_spec, config, env)
-
-
 class Neo4jMachine(object):
     """ A single Neo4j server instance, potentially part of a cluster.
     """
@@ -289,11 +269,9 @@ class Neo4jMachine(object):
             environment[fixed_key] = value
         for key, value in self.spec.env.items():
             environment[key] = value
-        ports = {
-                    "7474/tcp": self.spec.http_port,
-                    "7473/tcp": self.spec.https_port,
-                    "7687/tcp": self.spec.bolt_port,
-                }
+        ports = {"7474/tcp": self.spec.http_port,
+                 "7473/tcp": self.spec.https_port,
+                 "7687/tcp": self.spec.bolt_port}
         if self.spec.debug_opts.port is not None:
             ports["5100/tcp"] = self.spec.debug_opts.port
         if self.spec.dir_spec:
@@ -607,7 +585,7 @@ class Neo4jClusterService(Neo4jService):
             https_port or self.default_https_port, self.max_cores)
         core_debug_port_range = port_range(debug_port, self.max_cores)
         self.free_core_machine_specs = [
-            Neo4jCoreMachineSpec(
+            Neo4jMachineSpec(
                 name=chr(97 + i),
                 service_name=self.name,
                 bolt_port=core_bolt_port_range[i],
@@ -619,6 +597,7 @@ class Neo4jClusterService(Neo4jService):
                                            core_debug_port_range[i]),
                 dir_spec=dir_spec,
                 config=dict(config or {}, **{
+                    "dbms.mode": "CORE",
                     "causal_clustering.minimum_core_cluster_size_at_formation":
                         n_cores or self.min_cores,
                     "causal_clustering.minimum_core_cluster_size_at_runtime":
@@ -640,7 +619,7 @@ class Neo4jClusterService(Neo4jService):
         else:
             replica_debug_port_range = port_range(None, self.max_replicas)
         self.free_replica_machine_specs = [
-            Neo4jReplicaMachineSpec(
+            Neo4jMachineSpec(
                 name=chr(49 + i),
                 service_name=self.name,
                 bolt_port=replica_bolt_port_range[i],
@@ -651,7 +630,9 @@ class Neo4jClusterService(Neo4jService):
                 debug_opts=debug_opts_type(debug_suspend if i == 0 else False,
                                            replica_debug_port_range[i]),
                 dir_spec=dir_spec,
-                config=config,
+                config=dict(config or {}, **{
+                    "dbms.mode": "READ_REPLICA",
+                }),
                 env=env,
             )
             for i in range(self.max_replicas)
@@ -670,7 +651,7 @@ class Neo4jClusterService(Neo4jService):
 
     def boot(self):
         discovery_addresses = [spec.discovery_address for spec in self.machines
-                               if isinstance(spec, Neo4jCoreMachineSpec)]
+                               if spec.dbms_mode == "CORE"]
         log.debug("Discovery addresses set to %r" % discovery_addresses)
         for spec, machine in self.machines.items():
             if machine is None:
@@ -682,11 +663,11 @@ class Neo4jClusterService(Neo4jService):
 
     def cores(self):
         return [machine for spec, machine in self.machines.items()
-                if isinstance(spec, Neo4jCoreMachineSpec)]
+                if spec.dbms_mode == "CORE"]
 
     def replicas(self):
         return [machine for spec, machine in self.machines.items()
-                if isinstance(spec, Neo4jReplicaMachineSpec)]
+                if spec.dbms_mode == "READ_REPLICA"]
 
     def routers(self):
         return list(self.cores())
@@ -725,11 +706,9 @@ class Neo4jClusterService(Neo4jService):
         machine = self.machines[spec]
         del self.machines[spec]
         machine.stop()
-        if isinstance(spec, Neo4jCoreMachineSpec):
-            assert spec.dbms_mode == "CORE"
+        if spec.dbms_mode == "CORE":
             self.free_core_machine_specs.append(spec)
-        elif isinstance(spec, Neo4jReplicaMachineSpec):
-            assert spec.dbms_mode == "READ_REPLICA"
+        elif spec.dbms_mode == "READ_REPLICA":
             self.free_replica_machine_specs.append(spec)
 
     def remove(self, name):
