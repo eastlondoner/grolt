@@ -499,14 +499,6 @@ class Neo4jService(object):
         if self.network:
             self.network.remove()
 
-    @classmethod
-    def find_and_stop(cls, service_name):
-        for container in docker.containers.list(all=True):
-            if container.name.endswith(".{}".format(service_name)):
-                container.stop()
-                container.remove(force=True)
-        docker.networks.get(service_name).remove()
-
     def run_console(self):
         self.console = Neo4jConsole(self)
         self.console.invoke("env")
