@@ -28,7 +28,6 @@ from random import choice
 from shlex import split as shlex_split
 from threading import Thread
 from time import sleep
-from uuid import uuid4
 from xml.etree import ElementTree
 from webbrowser import open as open_browser
 
@@ -43,25 +42,13 @@ from py2neo.client import Connector, Connection
 
 from six.moves import input
 
+from grolt.security import Auth, make_auth
 
 docker = DockerClient.from_env(version="auto")
 
 log = getLogger(__name__)
 
 debug_opts_type = namedtuple("debug_opts_type", ["suspend", "port"])
-
-
-Auth = namedtuple("Auth", ["user", "password"])
-
-
-def make_auth(value=None, default_user=None, default_password=None):
-    try:
-        user, _, password = str(value or "").partition(":")
-    except AttributeError:
-        raise ValueError("Invalid auth string {!r}".format(value))
-    else:
-        return Auth(user or default_user or "neo4j",
-                    password or default_password or uuid4().hex)
 
 
 def resolve_image(image):
@@ -124,27 +111,34 @@ class Neo4jDirectorySpec(object):
     def volumes(self, name):
         volumes = {}
         if self.certificates_dir:
+            # The certificate directory needs to be shared as rw to
+            # allow Neo4j to perform 'chown'.
+            log.debug("Sharing directory %r for certificates (rw)", self.certificates_dir)
             volumes[self.certificates_dir] = {
                 "bind": "/var/lib/neo4j/certificates",
-                "mode": "ro",
+                "mode": "rw",
             }
         if self.import_dir:
+            log.debug("Sharing directory %r for imports (ro)", self.import_dir)
             volumes[self.import_dir] = {
                 "bind": "/var/lib/neo4j/import",
                 "mode": "ro",
             }
         if self.logs_dir:
+            log.debug("Sharing directory %r for logs (rw)", self.logs_dir)
             volumes[path_join(self.logs_dir, name)] = {
                 "bind": "/var/lib/neo4j/logs",
                 "mode": "rw",
             }
         if self.plugins_dir:
+            log.debug("Sharing directory %r for plugins (ro)", self.plugins_dir)
             volumes[self.plugins_dir] = {
                 "bind": "/plugins",
                 "mode": "ro",
             }
         if self.shared_dirs:
             for shared_dir in self.shared_dirs:
+                log.debug("Sharing directory %r as %r", shared_dir.source, shared_dir.destination)
                 volumes[shared_dir.source] = {
                     "bind": shared_dir.destination,
                     "mode": "rw",
@@ -209,6 +203,13 @@ class Neo4jMachineSpec(object):
             "localhost:{}".format(self.http_port)
         self.config["dbms.routing.advertised_address"] = \
             self.bolt_internal_address
+        if self.dir_spec.certificates_dir:
+            self.config.update({
+                "dbms.ssl.policy.bolt.enabled": True,
+                "dbms.ssl.policy.https.enabled": True,
+                "dbms.connector.bolt.tls_level": "OPTIONAL",
+                "dbms.connector.https.enabled": True,
+            })
         if config:
             self.config.update(**config)
 
@@ -277,7 +278,10 @@ class Neo4jMachine(object):
         if self.spec.dir_spec:
             volumes = self.spec.dir_spec.volumes(self.spec.name)
             for path in volumes:
-                makedirs(path, exist_ok=True)
+                try:
+                    makedirs(path)
+                except OSError:
+                    pass
         else:
             volumes = None
 

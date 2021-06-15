@@ -17,18 +17,23 @@
 
 
 from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING, Formatter, StreamHandler, getLogger
+from os import chmod, path
 from subprocess import call
 import sys
 from sys import stdout
+from tempfile import mkdtemp
 
 import click
 from click import ParamType, Path
 
 from grolt import make_auth, Neo4jService, Neo4jDirectorySpec, __name__ as root_module_name
 from grolt.polyfill import shlex_quote
+from grolt.security import make_self_signed_certificate
 
 # The readline import allows for extended input functionality, including
 # up/down arrow navigation. This should not be removed.
+from grolt.security import install_certificate, install_private_key
+
 try:
     import readline
 except ModuleNotFoundError as e:
@@ -236,6 +241,8 @@ passed. These are:
 @click.option("-v", "--verbose", count=True, callback=watch_log,
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
+@click.option("-Z", "--self-signed-certificate", is_flag=True,
+              help="Generate and use a self-signed certificate")
 @click.argument("command", nargs=-1, type=click.UNPROCESSED)
 def grolt(
         command,
@@ -258,8 +265,23 @@ def grolt(
         directory,
         config,
         server_side_routing,
+        self_signed_certificate,
 ):
     try:
+        if self_signed_certificate:
+            if certificates_dir is not None:
+                click.echo("Incompatible certificate options specified", err=True)
+                exit(1)
+            cert, key = make_self_signed_certificate()
+            certificates_dir = mkdtemp()
+            chmod(certificates_dir, 0o755)
+            subdirectories = [path.join(certificates_dir, subdir)
+                              for subdir in ["bolt", "https"]]
+            install_private_key(key, "private.key", *subdirectories)    # Neo4j 4.0+
+            install_private_key(key, "neo4j.key", certificates_dir)     # Neo4j 3.x
+            install_certificate(cert, "public.crt", *subdirectories)    # Neo4j 4.0+
+            install_certificate(cert, "neo4j.cert", certificates_dir)   # Neo4j 3.x
+
         dir_spec = Neo4jDirectorySpec(
             import_dir=import_dir,
             logs_dir=logs_dir,
