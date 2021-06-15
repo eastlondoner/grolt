@@ -27,13 +27,13 @@ import click
 from click import ParamType, Path
 
 from grolt import make_auth, Neo4jService, Neo4jDirectorySpec, __name__ as root_module_name
-from grolt.polyfill import shlex_quote
-from grolt.security import make_self_signed_certificate
+from grolt.compat import shlex_quote
+from grolt.security import (make_self_signed_certificate,
+                            install_certificate,
+                            install_private_key)
 
 # The readline import allows for extended input functionality, including
 # up/down arrow navigation. This should not be removed.
-from grolt.security import install_certificate, install_private_key
-
 try:
     import readline
 except ModuleNotFoundError as e:
