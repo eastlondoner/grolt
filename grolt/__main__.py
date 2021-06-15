@@ -241,7 +241,7 @@ passed. These are:
 @click.option("-v", "--verbose", count=True, callback=watch_log,
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
-@click.option("-Z", "--self-signed-certificate", is_flag=True,
+@click.option("-Z", "--self-signed-certificate.", is_flag=True,
               help="Generate and use a self-signed certificate")
 @click.argument("command", nargs=-1, type=click.UNPROCESSED)
 def grolt(
