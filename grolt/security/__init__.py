@@ -19,9 +19,11 @@
 from __future__ import absolute_import
 
 from collections import namedtuple
+from os import chmod, path
+from tempfile import mkdtemp
 from uuid import uuid4
 
-
+from grolt.images import is_legacy_image, resolve_image
 from grolt.security._cryptography import (make_self_signed_certificate,
                                           install_certificate,
                                           install_private_key)
@@ -38,3 +40,19 @@ def make_auth(value=None, default_user=None, default_password=None):
     else:
         return Auth(user or default_user or "neo4j",
                     password or default_password or uuid4().hex)
+
+
+def install_self_signed_certificate(image):
+    """ Install a self-signed certificate for the given Docker image
+    and return the installation directory.
+    """
+    if is_legacy_image(resolve_image(image)):
+        return None  # Automatically available in 3.x
+    cert, key = make_self_signed_certificate()
+    certificates_dir = mkdtemp()
+    chmod(certificates_dir, 0o755)
+    subdirectories = [path.join(certificates_dir, subdir)
+                      for subdir in ["bolt", "https"]]
+    install_private_key(key, "private.key", *subdirectories)
+    install_certificate(cert, "public.crt", *subdirectories)
+    return certificates_dir

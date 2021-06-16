@@ -42,46 +42,15 @@ from py2neo.client import Connector, Connection
 
 from six.moves import input
 
+from grolt.images import is_legacy_image, resolve_image
 from grolt.security import Auth, make_auth
+
 
 docker = DockerClient.from_env(version="auto")
 
 log = getLogger(__name__)
 
 debug_opts_type = namedtuple("debug_opts_type", ["suspend", "port"])
-
-
-def resolve_image(image):
-    """ Resolve an informal image tag into a full Docker image tag. Any tag
-    available on Docker Hub for Neo4j can be used, and if no 'neo4j:' prefix
-    exists, this will be added automatically. The default edition is
-    Community, unless a cluster is being created in which case Enterprise
-    edition is selected instead. Explicit selection of Enterprise edition can
-    be made by adding an '-enterprise' suffix to the image tag.
-
-    If a 'file:' URI is passed in here instead of an image tag, the Docker
-    image will be loaded from that file instead.
-
-    Examples of valid tags:
-    - 3.4.6
-    - neo4j:3.4.6
-    - latest
-    - file:/home/me/image.tar
-
-    """
-    if image.startswith("file:"):
-        return load_image_from_file(image[5:])
-    elif ":" in image:
-        return image
-    else:
-        return "neo4j:" + image
-
-
-def load_image_from_file(name):
-    with open(name, "rb") as f:
-        images = docker.images.load(f.read())
-        image = images[0]
-        return image.tags[0]
 
 
 def port_range(base_port, count):
@@ -183,11 +152,12 @@ class Neo4jMachineSpec(object):
     debug_port = 5100
     bolt_internal_port = 7688
 
-    def __init__(self, name, service_name,
+    def __init__(self, name, service_name, image,
                  bolt_port, http_port, https_port, debug_opts,
                  dir_spec, config, env):
         self.name = name
         self.service_name = service_name
+        self.image = image
         self.bolt_port = bolt_port
         self.http_port = http_port
         self.https_port = https_port
@@ -203,7 +173,7 @@ class Neo4jMachineSpec(object):
             "localhost:{}".format(self.http_port)
         self.config["dbms.routing.advertised_address"] = \
             self.bolt_internal_address
-        if self.dir_spec.certificates_dir:
+        if self.dir_spec and self.dir_spec.certificates_dir and not is_legacy_image(self.image):
             self.config.update({
                 "dbms.ssl.policy.bolt.enabled": True,
                 "dbms.ssl.policy.https.enabled": True,
@@ -227,10 +197,6 @@ class Neo4jMachineSpec(object):
     @property
     def discovery_address(self):
         return "{}:{}".format(self.fq_name, self.discovery_port)
-
-    @property
-    def http_uri(self):
-        return "http://localhost:{}".format(self.http_port)
 
     @property
     def bolt_internal_address(self):
@@ -403,6 +369,19 @@ class Neo4jMachine(object):
         self.container.stop(timeout=timeout)
         self.container.remove(force=True)
 
+    def uri(self, scheme):
+        """ Return a URI targeting this machine for a given URI scheme.
+        """
+        if scheme in ("neo4j", "neo4j+s", "neo4j+ssc", "bolt", "bolt+s", "bolt+ssc"):
+            port = self.spec.bolt_port
+        elif scheme == "http":
+            port = self.spec.http_port
+        elif scheme in ("https", "http+s", "http+ssc"):
+            port = self.spec.https_port
+        else:
+            raise ValueError("Unsupported URI scheme %r", scheme)
+        return "{}://localhost:{}".format(scheme, port)
+
 
 class Neo4jService(object):
     """ A Neo4j database management service.
@@ -529,6 +508,7 @@ class Neo4jStandaloneService(Neo4jService):
         spec = Neo4jMachineSpec(
             name="a",
             service_name=self.name,
+            image=self.image,
             bolt_port=bolt_port or self.default_bolt_port,
             http_port=http_port or self.default_http_port,
             https_port=https_port or self.default_https_port,
@@ -584,6 +564,7 @@ class Neo4jClusterService(Neo4jService):
             Neo4jMachineSpec(
                 name=chr(97 + i),
                 service_name=self.name,
+                image=self.image,
                 bolt_port=core_bolt_port_range[i],
                 http_port=core_http_port_range[i],
                 https_port=core_https_port_range[i],
@@ -618,6 +599,7 @@ class Neo4jClusterService(Neo4jService):
             Neo4jMachineSpec(
                 name=chr(49 + i),
                 service_name=self.name,
+                image=self.image,
                 bolt_port=replica_bolt_port_range[i],
                 http_port=replica_http_port_range[i],
                 https_port=replica_https_port_range[i],
@@ -806,9 +788,10 @@ class Neo4jConsole(object):
         """
 
         def f(m):
+            http_uri = m.uri("http")
             click.echo("Opening web browser for machine {!r} at "
-                       "«{}»".format(m.spec.fq_name, m.spec.http_uri))
-            open_browser(m.spec.http_uri)
+                       "«{}»".format(m.spec.fq_name, http_uri))
+            open_browser(http_uri)
 
         if not self._for_each_machine(machine, f):
             raise BadParameter("Machine {!r} not found".format(machine))
