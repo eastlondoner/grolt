@@ -165,7 +165,7 @@ class Neo4jMachineSpec(object):
         self.debug_opts = debug_opts
         self.env = dict(env or {})
         self.config = dict(self.config or {})
-        if debug_opts.port is not None:
+        if debug_opts.port:
             self._add_debug_opts(debug_opts)
         self.config["dbms.connector.bolt.advertised_address"] = \
             "localhost:{}".format(self.bolt_port)
@@ -226,7 +226,11 @@ class Neo4jMachine(object):
         self.image = image
         self.address = Address(("localhost", self.spec.bolt_port))
         self.auth = auth
-        self.profile = ConnectionProfile(port=self.spec.bolt_port, auth=self.auth)
+        self.profiles = {
+            "bolt": ConnectionProfile(scheme="bolt", port=self.spec.bolt_port, auth=self.auth),
+            "http": ConnectionProfile(scheme="http", port=self.spec.http_port, auth=self.auth),
+            "https": ConnectionProfile(scheme="https", port=self.spec.https_port, auth=self.auth),
+        }
         environment = {}
         if self.auth:
             environment["NEO4J_AUTH"] = "/".join(self.auth)
@@ -310,13 +314,13 @@ class Neo4jMachine(object):
         """ Repeatedly attempt to open a connection to a Bolt server.
         """
         t0 = monotonic()
-        log.debug("Trying to open connection to %s", self.profile)
+        log.debug("Trying to open connection to %s", self.profiles["bolt"])
         errors = set()
         again = True
         wait = 0.1
         while again:
             try:
-                cx = Connection.open(self.profile)
+                cx = Connection.open(self.profiles["bolt"])
             except ConnectionUnavailable as e:
                 errors.add(" ".join(map(str, e.args)))
             else:
@@ -327,7 +331,7 @@ class Neo4jMachine(object):
                 sleep(wait)
                 wait *= 2
         log.error("Could not open connection to %s (%r)",
-                  self.profile, errors)
+                  self.profiles["bolt"], errors)
         raise ConnectionUnavailable("Could not open connection")
 
     def ping(self, timeout):
@@ -899,7 +903,7 @@ class Neo4jConsole(object):
         """ Display the routing table for a given graph database.
         """
         routers = self.service.routers()
-        cx = Connector(ServiceProfile(routers[0].profile, routing=True))
+        cx = Connector(ServiceProfile(routers[0].profiles["bolt"], routing=True))
         if gdb is None:
             click.echo("Refreshing routing information for the default graph database...")
         else:
