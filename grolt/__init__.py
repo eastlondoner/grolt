@@ -310,17 +310,18 @@ class Neo4jMachine(object):
         log.debug("Machine %r has internal IP address "
                   "«%s»", self.spec.fq_name, self.ip_address)
 
-    def _poll_connection(self, timeout=0):
+    def _poll_connection(self, port_name, timeout=0):
         """ Repeatedly attempt to open a connection to a Bolt server.
         """
         t0 = monotonic()
-        log.debug("Trying to open connection to %s", self.profiles["bolt"])
+        profile = self.profiles[port_name]
+        log.debug("Trying to open connection to %s", profile)
         errors = set()
         again = True
         wait = 0.1
         while again:
             try:
-                cx = Connection.open(self.profiles["bolt"])
+                cx = Connection.open(profile)
             except ConnectionUnavailable as e:
                 errors.add(" ".join(map(str, e.args)))
             else:
@@ -330,13 +331,14 @@ class Neo4jMachine(object):
             if again:
                 sleep(wait)
                 wait *= 2
-        log.error("Could not open connection to %s (%r)",
-                  self.profiles["bolt"], errors)
+        log.error("Could not open connection to %s (%r)", profile, errors)
         raise ConnectionUnavailable("Could not open connection")
 
     def ping(self, timeout):
         try:
-            cx = self._poll_connection(timeout=timeout)
+            cx = self._poll_connection("bolt", timeout=timeout)
+            cx.close()
+            cx = self._poll_connection("http", timeout=timeout)
             cx.close()
             log.info("Machine {!r} available".format(self.spec.fq_name))
         except ConnectionUnavailable:
