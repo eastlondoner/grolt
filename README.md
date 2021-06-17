@@ -2,10 +2,10 @@
 
 Grolt is a Docker-based development and testing framework for Neo4j.
 
+**Please ensure that you have an appropriate license for running Neo4j**
+
 
 ## Usage
-
-Grolt requires python 3. Depending on your local configuration You may need to use `python3` or `alias python=python3` before running the installation command.
 
 To install Grolt in developer mode, simply run:
 ```
