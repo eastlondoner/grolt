@@ -171,6 +171,8 @@ class Neo4jMachineSpec(object):
             "localhost:{}".format(self.bolt_port)
         self.config["dbms.connector.http.advertised_address"] = \
             "localhost:{}".format(self.http_port)
+        self.config["dbms.connector.https.advertised_address"] = \
+            "localhost:{}".format(self.https_port)
         self.config["dbms.routing.advertised_address"] = \
             self.bolt_internal_address
         if self.dir_spec and self.dir_spec.certificates_dir and not is_legacy_image(self.image):
@@ -540,6 +542,7 @@ class Neo4jClusterService(Neo4jService):
 
     default_bolt_port = 17601
     default_http_port = 17401
+    default_https_port = 17301
     default_debug_port = 15001
 
     def __init__(self, name=None, image=None, auth=None,
