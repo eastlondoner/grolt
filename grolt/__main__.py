@@ -234,6 +234,8 @@ passed. These are:
 @click.option("-S", "--certificates-dir", type=Path(exists=True, dir_okay=True,
                                                     writable=True),
               help="Share a local directory for use by server certificates.")
+@click.option("-u", "--uid", type=int,
+              help="User ID to run neo4j process as inside the docker container")
 @click.option("-v", "--verbose", count=True, callback=watch_log,
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
@@ -261,6 +263,7 @@ def grolt(
         directory,
         config,
         server_side_routing,
+        uid,
         self_signed_certificate,
 ):
     try:
@@ -295,7 +298,8 @@ def grolt(
                 debug_suspend,
                 dir_spec,
                 config_dict,
-                env_dict
+                env_dict,
+                uid
         ) as neo4j:
             if command:
                 call(" ".join(map(shlex_quote, command)), shell=True,

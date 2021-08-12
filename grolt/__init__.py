@@ -22,7 +22,7 @@ from collections import namedtuple
 from inspect import getmembers
 from logging import getLogger
 from math import ceil
-from os import makedirs
+from os import makedirs, getuid
 from os.path import isdir, join as path_join
 from random import choice
 from shlex import split as shlex_split
@@ -154,7 +154,7 @@ class Neo4jMachineSpec(object):
 
     def __init__(self, name, service_name, image,
                  bolt_port, http_port, https_port, debug_opts,
-                 dir_spec, config, env):
+                 dir_spec, config, env, uid):
         self.name = name
         self.service_name = service_name
         self.image = image
@@ -163,8 +163,9 @@ class Neo4jMachineSpec(object):
         self.https_port = https_port
         self.dir_spec = dir_spec
         self.debug_opts = debug_opts
-        self.env = dict(env or {})
         self.config = dict(self.config or {})
+        self.env = dict(env or {})
+        self.uid = uid
         if debug_opts.port:
             self._add_debug_opts(debug_opts)
         self.config["dbms.connector.bolt.advertised_address"] = \
@@ -258,6 +259,12 @@ class Neo4jMachine(object):
             volumes = None
 
         def create_container(img):
+            extraKwargs = {}
+            if self.spec.uid is not None:
+                extraKwargs["user"] = self.spec.uid
+            else:
+                extraKwargs = _try_set_user(extraKwargs)
+
             return docker.containers.create(
                 img,
                 detach=True,
@@ -267,6 +274,7 @@ class Neo4jMachine(object):
                 network=self.spec.service_name,
                 ports=ports,
                 volumes=volumes,
+                **extraKwargs
             )
 
         try:
@@ -391,6 +399,15 @@ class Neo4jMachine(object):
         return "{}://localhost:{}".format(scheme, port)
 
 
+def _try_set_user(extraKwargs):
+    try:
+        id = getuid();
+        extraKwargs["user"] = id
+    except Exception as e:
+        log.info("Unable to get current user uid, continuing with docker default", e)
+    return extraKwargs
+
+
 class Neo4jService(object):
     """ A Neo4j database management service.
     """
@@ -406,7 +423,7 @@ class Neo4jService(object):
                 n_cores=None, n_replicas=None,
                 bolt_port=None, http_port=None, https_port=None,
                 debug_port=None, debug_suspend=None,
-                dir_spec=None, config=None, env=None):
+                dir_spec=None, config=None, env=None, uid=None):
         if n_cores:
             return object.__new__(Neo4jClusterService)
         else:
@@ -421,12 +438,13 @@ class Neo4jService(object):
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None,
                  debug_port=None, debug_suspend=None, dir_spec=None,
-                 config=None, env=None):
+                 config=None, env=None, uid=None):
         self.name = name or self._random_name()
         self.image = resolve_image(image or self.default_image)
         self.auth = Auth(*auth) if auth else make_auth()
         if self.auth.user != "neo4j":
             raise ValueError("Auth user must be 'neo4j' or empty")
+        self.uid = uid
         self.machines = {}
         self.network = None
         self.console = None
@@ -509,10 +527,10 @@ class Neo4jStandaloneService(Neo4jService):
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
-                 debug_suspend=None, dir_spec=None, config=None, env=None):
+                 debug_suspend=None, dir_spec=None, config=None, env=None, uid=None):
         super(Neo4jStandaloneService, self).__init__(name, image, auth, n_cores, n_replicas,
                                                      bolt_port, http_port, https_port, dir_spec,
-                                                     config, env)
+                                                     config, env, uid)
         spec = Neo4jMachineSpec(
             name="a",
             service_name=self.name,
@@ -524,6 +542,7 @@ class Neo4jStandaloneService(Neo4jService):
             dir_spec=dir_spec,
             config=config,
             env=env,
+            uid=self.uid,
         )
         self.machines[spec] = None
         self.boot()
@@ -548,10 +567,10 @@ class Neo4jClusterService(Neo4jService):
     def __init__(self, name=None, image=None, auth=None,
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
-                 debug_suspend=None, dir_spec=None, config=None, env=None):
+                 debug_suspend=None, dir_spec=None, config=None, env=None, uid=None):
         super(Neo4jClusterService, self).__init__(name, image, auth, n_cores, n_replicas,
                                                   bolt_port, http_port, https_port, debug_port,
-                                                  debug_suspend, dir_spec, config, env)
+                                                  debug_suspend, dir_spec, config, env, uid)
         n_cores = n_cores or self.min_cores
         n_replicas = n_replicas or self.min_replicas
         if not self.min_cores <= n_cores <= self.max_cores:
@@ -590,6 +609,7 @@ class Neo4jClusterService(Neo4jService):
                         self.min_cores,
                 }),
                 env=env,
+                uid=self.uid,
             )
             for i in range(self.max_cores)
         ]
@@ -621,6 +641,7 @@ class Neo4jClusterService(Neo4jService):
                     "dbms.mode": "READ_REPLICA",
                 }),
                 env=env,
+                uid=self.uid,
             )
             for i in range(self.max_replicas)
         ]
