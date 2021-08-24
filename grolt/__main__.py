@@ -234,8 +234,10 @@ passed. These are:
 @click.option("-S", "--certificates-dir", type=Path(exists=True, dir_okay=True,
                                                     writable=True),
               help="Share a local directory for use by server certificates.")
-@click.option("-u", "--uid", type=int, is_flag=False, flag_value=-1, default=0,
-              help="User ID to run neo4j process as inside the docker container. Use as a flag without specifying a value to run as the current user")
+@click.option("-u", "--uid", type=int, is_flag=False, flag_value=-1, default=0, # -1 indicates use the current user's uid.
+              help="User ID to run neo4j process as inside the docker container." +
+                   ( "Set as a flag without specifying a value to use the current user's id." if sys.version_info >= (3, 6)
+                   else "Set to -1 to use the current user's id" ) )
 @click.option("-v", "--verbose", count=True, callback=watch_log,
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")

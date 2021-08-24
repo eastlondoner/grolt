@@ -1,7 +1,8 @@
 certifi
-cryptography~=3.0
+cryptography<3.4; python_version<'3.6'
+cryptography>=3.4; python_version>='3.6'
 click<8.0; python_version<'3.6'
-click; python_version>='3.6'
+click>=8.0; python_version>='3.6'
 docker<5.0; python_version<'3.6'
 docker; python_version>='3.6'
 monotonic
