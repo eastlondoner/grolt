@@ -260,10 +260,7 @@ class Neo4jMachine(object):
 
         def create_container(img):
             extraKwargs = {}
-            if self.spec.uid is not None:
-                extraKwargs["user"] = self.spec.uid
-            else:
-                extraKwargs = _try_set_user(extraKwargs)
+            extraKwargs = _try_set_user(extraKwargs, self.spec.uid)
 
             return docker.containers.create(
                 img,
@@ -399,12 +396,20 @@ class Neo4jMachine(object):
         return "{}://localhost:{}".format(scheme, port)
 
 
-def _try_set_user(extraKwargs):
-    try:
-        id = getuid();
-        extraKwargs["user"] = id
-    except Exception as e:
-        log.info("Unable to get current user uid, continuing with docker default", e)
+def _try_set_user(extraKwargs, uid):
+    # If UID is -1 it means use the current user's uid
+    if uid == -1:
+        try:
+            uid = getuid();
+        except Exception as e:
+            log.info("Unable to get current user uid, continuing with docker default", e)
+            return extraKwargs
+
+    # If UID is 0 don't set the paramenter
+    if uid == 0:
+        return extraKwargs
+
+    extraKwargs["user"] = uid
     return extraKwargs
 
 
