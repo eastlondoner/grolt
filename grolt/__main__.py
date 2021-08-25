@@ -234,6 +234,9 @@ passed. These are:
 @click.option("-S", "--certificates-dir", type=Path(exists=True, dir_okay=True,
                                                     writable=True),
               help="Share a local directory for use by server certificates.")
+@click.option("-u", "--user",
+              help="User name or ID as whom to run the Docker container. "
+                   "For the current user, use `-u $(whoami)`.")
 @click.option("-v", "--verbose", count=True, callback=watch_log,
               expose_value=False, is_eager=True,
               help="Show more detail about the startup and shutdown process.")
@@ -245,6 +248,7 @@ def grolt(
         name,
         image,
         auth,
+        user,
         n_cores,
         n_replicas,
         bolt_port,
@@ -286,6 +290,7 @@ def grolt(
                 name,
                 image,
                 auth,
+                user,
                 n_cores,
                 n_replicas,
                 bolt_port,

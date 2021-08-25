@@ -223,7 +223,7 @@ class Neo4jMachine(object):
 
     ready = 0
 
-    def __init__(self, spec, image, auth):
+    def __init__(self, spec, image, auth, user):
         self.spec = spec
         self.image = image
         self.address = Address(("localhost", self.spec.bolt_port))
@@ -256,6 +256,10 @@ class Neo4jMachine(object):
                     pass
         else:
             volumes = None
+        if isinstance(user, str):
+            # Note: this will only work on Unix.
+            from pwd import getpwnam
+            user = getpwnam(user).pw_uid
 
         def create_container(img):
             return docker.containers.create(
@@ -266,6 +270,7 @@ class Neo4jMachine(object):
                 name=self.spec.fq_name,
                 network=self.spec.service_name,
                 ports=ports,
+                user=user,
                 volumes=volumes,
             )
 
@@ -402,7 +407,7 @@ class Neo4jService(object):
     default_https_port = 7473
     default_debug_port = 5005
 
-    def __new__(cls, name=None, image=None, auth=None,
+    def __new__(cls, name=None, image=None, auth=None, user=None,
                 n_cores=None, n_replicas=None,
                 bolt_port=None, http_port=None, https_port=None,
                 debug_port=None, debug_suspend=None,
@@ -417,7 +422,7 @@ class Neo4jService(object):
         return "".join(choice("bcdfghjklmnpqrstvwxz") for _ in range(7))
 
     # noinspection PyUnusedLocal
-    def __init__(self, name=None, image=None, auth=None,
+    def __init__(self, name=None, image=None, auth=None, user=None,
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None,
                  debug_port=None, debug_suspend=None, dir_spec=None,
@@ -427,6 +432,7 @@ class Neo4jService(object):
         self.auth = Auth(*auth) if auth else make_auth()
         if self.auth.user != "neo4j":
             raise ValueError("Auth user must be 'neo4j' or empty")
+        self.user = user
         self.machines = {}
         self.network = None
         self.console = None
@@ -446,7 +452,7 @@ class Neo4jService(object):
     def boot(self):
         for spec, machine in self.machines.items():
             if machine is None:
-                self.machines[spec] = Neo4jMachine(spec, self.image, self.auth)
+                self.machines[spec] = Neo4jMachine(spec, self.image, self.auth, self.user)
 
     def routers(self):
         return list(self.machines.values())
@@ -506,11 +512,11 @@ class Neo4jService(object):
 class Neo4jStandaloneService(Neo4jService):
     default_image = "neo4j:latest"
 
-    def __init__(self, name=None, image=None, auth=None,
+    def __init__(self, name=None, image=None, auth=None, user=None,
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
                  debug_suspend=None, dir_spec=None, config=None, env=None):
-        super(Neo4jStandaloneService, self).__init__(name, image, auth, n_cores, n_replicas,
+        super(Neo4jStandaloneService, self).__init__(name, image, auth, user,  n_cores, n_replicas,
                                                      bolt_port, http_port, https_port, dir_spec,
                                                      config, env)
         spec = Neo4jMachineSpec(
@@ -545,11 +551,11 @@ class Neo4jClusterService(Neo4jService):
     default_https_port = 17301
     default_debug_port = 15001
 
-    def __init__(self, name=None, image=None, auth=None,
+    def __init__(self, name=None, image=None, auth=None, user=None,
                  n_cores=None, n_replicas=None,
                  bolt_port=None, http_port=None, https_port=None, debug_port=None,
                  debug_suspend=None, dir_spec=None, config=None, env=None):
-        super(Neo4jClusterService, self).__init__(name, image, auth, n_cores, n_replicas,
+        super(Neo4jClusterService, self).__init__(name, image, auth, user, n_cores, n_replicas,
                                                   bolt_port, http_port, https_port, debug_port,
                                                   debug_suspend, dir_spec, config, env)
         n_cores = n_cores or self.min_cores
@@ -646,7 +652,7 @@ class Neo4jClusterService(Neo4jService):
                     "causal_clustering.initial_discovery_members":
                         ",".join(discovery_addresses),
                 })
-                self.machines[spec] = Neo4jMachine(spec, self.image, self.auth)
+                self.machines[spec] = Neo4jMachine(spec, self.image, self.auth, self.user)
 
     def cores(self):
         return [machine for spec, machine in self.machines.items()
