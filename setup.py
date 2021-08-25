@@ -36,7 +36,8 @@ package_metadata = {
     "packages": packages,
     "install_requires": [
         "certifi",
-        "cryptography~=3.0",
+        "cryptography~=2.0; python_version<'3.6'",
+        "cryptography~=3.0; python_version>='3.6'",
         "click<8.0; python_version<'3.6'",
         "click; python_version>='3.6'",
         "docker<5.0; python_version<'3.6'",
