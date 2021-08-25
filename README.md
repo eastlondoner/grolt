@@ -69,5 +69,5 @@ mvn package -DskipTests -Dcheckstyle.skip -Dlicense.skip -Dlicensing.skip -Denfo
 Then you can run grolt with them
 ```
 cd <your neo4j repo>
-grolt -c 3 --neo4j-source-dir "$(pwd)"
+grolt -c 3 --neo4j-source-dir "$(pwd)" --user "$(whoami)"
 ```
