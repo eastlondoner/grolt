@@ -483,8 +483,8 @@ class Neo4jService(object):
         if all(machine.ready == 1 for spec, machine in self.machines.items()):
             log.info("Service %r available", self.name)
         else:
-            raise RuntimeError("Service %r unavailable - "
-                               "some machines failed", self.name)
+            raise RuntimeError(("Service %r unavailable - "
+                                "some machines failed") % self.name)
 
     def stop(self, timeout=None):
         log.info("Stopping service %r", self.name)
