@@ -256,7 +256,11 @@ class Neo4jMachine(object):
                     pass
         else:
             volumes = None
-        if isinstance(user, str):
+        try:
+            user = int(user)
+        except TypeError:
+            user = None
+        except ValueError:
             # Note: this will only work on Unix.
             from pwd import getpwnam
             user = getpwnam(user).pw_uid
