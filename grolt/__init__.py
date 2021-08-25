@@ -39,6 +39,7 @@ from monotonic import monotonic
 from py2neo import ServiceProfile, ConnectionProfile, ConnectionUnavailable
 from py2neo.addressing import Address
 from py2neo.client import Connector, Connection
+from packaging.version import InvalidVersion
 
 from six.moves import input
 
@@ -333,6 +334,9 @@ class Neo4jMachine(object):
         while again:
             try:
                 cx = Connection.open(profile)
+            except InvalidVersion as e:
+                log.info("Encountered invalid Neo4j version '%s'. Continuing anyway (this is a dev tool)", e)
+                return None
             except ConnectionUnavailable as e:
                 errors.add(" ".join(map(str, e.args)))
             else:
@@ -348,9 +352,11 @@ class Neo4jMachine(object):
     def ping(self, timeout):
         try:
             cx = self._poll_connection("bolt", timeout=timeout)
-            cx.close()
+            if cx is not None:
+                cx.close()
             cx = self._poll_connection("http", timeout=timeout)
-            cx.close()
+            if cx is not None:
+                cx.close()
             log.info("Machine {!r} available".format(self.spec.fq_name))
         except ConnectionUnavailable:
             log.info("Machine {!r} unavailable".format(self.spec.fq_name))
